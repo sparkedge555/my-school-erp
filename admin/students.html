@@ -1,0 +1,1229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Students — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css">
+
+  <style>
+    .page-content { overflow-y: auto; }
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    /* ── Clock & header ─────────────────────────────────── */
+    #liveClock {
+      font-size: 12.5px; color: var(--text-muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; cursor: pointer; padding: 5px 9px;
+      font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Class stats bar ─────────────────────────────────── */
+    .stats-bar {
+      display: flex; flex-wrap: wrap; gap: 8px;
+      margin-bottom: 18px; align-items: center;
+    }
+    .stats-bar-label {
+      font-size: 12px; font-weight: 600; color: var(--text-muted);
+      text-transform: uppercase; letter-spacing: .06em; margin-right: 4px;
+    }
+    .class-stat-pill {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: 20px; padding: 4px 12px;
+      font-size: 12.5px; cursor: pointer;
+      transition: background .15s, border-color .15s, color .15s;
+      white-space: nowrap;
+    }
+    .class-stat-pill:hover,
+    .class-stat-pill.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+    .class-stat-pill .pill-count {
+      font-weight: 700; margin-left: 4px;
+    }
+
+    /* ── Filter row ──────────────────────────────────────── */
+    .filter-row {
+      display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap; margin-bottom: 18px;
+    }
+    .filter-row .search-bar { flex: 1; min-width: 200px; }
+    .filter-row .search-bar input { width: 100%; }
+    .filter-row select { min-width: 110px; }
+
+    /* ── Table extras ────────────────────────────────────── */
+    .st-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      object-fit: cover; border: 2px solid var(--border); display: block;
+    }
+    .avatar-initials {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: var(--primary-light, #2d5986); color: #fff;
+      font-size: 14px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .st-name { font-weight: 600; font-size: 14px; line-height: 1.3; }
+    .st-admno { font-size: 11.5px; color: var(--text-muted); }
+
+    @keyframes rowIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+    .erp-table tbody tr { animation: rowIn .2s ease both; }
+
+    .empty-state { text-align: center; padding: 40px 16px; color: var(--text-muted); }
+    .empty-state .ei { font-size: 36px; margin-bottom: 10px; }
+
+    @keyframes shimmer {
+      0% { background-position: -600px 0; }
+      100% { background-position: 600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg,#e8edf3 25%,#f5f7fa 50%,#e8edf3 75%);
+      background-size: 1200px 100%; animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: inline-block;
+    }
+
+    /* ── Modals ─────────────────────────────────────────── */
+    .modal-close {
+      background: none; border: none; font-size: 20px; cursor: pointer;
+      color: var(--text-muted); line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+
+    /* ── Form tabs ───────────────────────────────────────── */
+    .form-tabs {
+      display: flex; border-bottom: 2px solid var(--border);
+      margin-bottom: 18px; gap: 0;
+    }
+    .form-tab {
+      padding: 10px 20px; font-size: 14px; font-weight: 600;
+      cursor: pointer; background: none; border: none;
+      color: var(--text-muted); border-bottom: 3px solid transparent;
+      margin-bottom: -2px; transition: color .15s, border-color .15s;
+      font-family: inherit;
+    }
+    .form-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .form-tab-panel { display: none; }
+    .form-tab-panel.active { display: block; }
+
+    /* ── Photo upload ─────────────────────────────────────── */
+    .photo-upload-wrap {
+      display: flex; flex-direction: column; align-items: center; gap: 8px; margin-bottom: 16px;
+    }
+    .photo-upload-ring {
+      width: 90px; height: 90px; border-radius: 50%;
+      border: 3px dashed var(--border); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; background: var(--bg); transition: border-color .2s;
+    }
+    .photo-upload-ring:hover { border-color: var(--primary); }
+    .photo-upload-ring img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .photo-upload-hint {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 3px; font-size: 11px; color: var(--text-muted); text-align: center; padding: 8px;
+    }
+    .photo-upload-hint span { font-size: 20px; }
+    #stPhotoProgress { font-size: 12px; color: var(--primary); min-height: 16px; }
+
+    /* ── Password field ──────────────────────────────────── */
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 38px; }
+    .pw-eye {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; font-size: 15px;
+      color: var(--text-muted); padding: 2px;
+    }
+
+    /* ── View modal ─────────────────────────────────────── */
+    .profile-hero {
+      display: flex; gap: 20px; align-items: flex-start;
+      padding: 20px 20px 16px; border-bottom: 1px solid var(--border);
+    }
+    .profile-hero img, .profile-hero .avatar-lg {
+      width: 90px; height: 90px; border-radius: 50%;
+      object-fit: cover; border: 3px solid var(--primary); flex-shrink: 0;
+    }
+    .avatar-lg {
+      background: var(--primary); color: #fff; font-size: 28px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .profile-name { font-size: 20px; font-weight: 700; }
+    .profile-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .profile-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+    .view-tabs {
+      display: flex; border-bottom: 2px solid var(--border);
+      padding: 0 20px; gap: 0;
+    }
+    .view-tab {
+      padding: 10px 16px; font-size: 13.5px; font-weight: 600;
+      cursor: pointer; background: none; border: none;
+      color: var(--text-muted); border-bottom: 3px solid transparent;
+      margin-bottom: -2px; transition: color .15s, border-color .15s;
+      font-family: inherit;
+    }
+    .view-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .view-tab-panel { display: none; padding: 18px 20px; }
+    .view-tab-panel.active { display: block; }
+
+    .detail-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px;
+    }
+    .detail-field label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--text-muted); display: block; margin-bottom: 2px;
+    }
+    .detail-field span { font-size: 13.5px; font-weight: 500; }
+
+    /* View sub-tables */
+    .sub-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    .sub-table th {
+      background: var(--bg); font-size: 12px; font-weight: 600;
+      color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em;
+      padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border);
+    }
+    .sub-table td { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+    .sub-table tr:last-child td { border-bottom: none; }
+    .sub-table tbody tr:hover td { background: #f8f9ff; }
+
+    .sub-empty { text-align: center; padding: 28px; color: var(--text-muted); font-size: 13px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════ SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html"     data-page="dashboard">📊 Dashboard</a></li>
+    <li><a href="announcements.html" data-page="announcements">📢 Announcements</a></li>
+
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html"  data-page="teachers">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html"  data-page="students" class="active">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html" data-page="timetable">📅 Timetable</a></li>
+
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html"      data-page="fees">💰 Fee Management</a></li>
+
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html"     data-page="marks">📝 Marks &amp; Results</a></li>
+
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html"      data-page="docs">📄 Certificates</a></li>
+
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html"      data-page="team">👥 Team Members</a></li>
+    <li><a href="settings.html"  data-page="settings">⚙️ Settings</a></li>
+  </ul>
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color:rgba(255,255,255,.7);">🚪 Logout</a>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════ MAIN -->
+<div class="main-content">
+
+  <!-- HEADER -->
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">Students Management</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock">Loading…</div>
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <!-- PAGE BODY -->
+  <main class="page-content">
+
+    <!-- Class stats bar -->
+    <div class="stats-bar" id="statsBar">
+      <span class="stats-bar-label">By Class:</span>
+      <span class="skeleton" style="width:300px;height:28px;border-radius:20px;"></span>
+    </div>
+
+    <!-- Filter row -->
+    <div class="filter-row">
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input class="form-control" type="search" id="searchInput"
+               placeholder="Search by name or admission no…" />
+      </div>
+      <select class="form-control" id="filterClass">
+        <option value="">All Classes</option>
+        <option value="KG1">KG1</option>
+        <option value="KG2">KG2</option>
+        <option value="1">Class 1</option>
+        <option value="2">Class 2</option>
+        <option value="3">Class 3</option>
+        <option value="4">Class 4</option>
+        <option value="5">Class 5</option>
+        <option value="6">Class 6</option>
+        <option value="7">Class 7</option>
+        <option value="8">Class 8</option>
+        <option value="9">Class 9</option>
+        <option value="10">Class 10</option>
+        <option value="11">Class 11</option>
+        <option value="12">Class 12</option>
+      </select>
+      <select class="form-control" id="filterSection">
+        <option value="">All Sections</option>
+        <option value="A">Section A</option>
+        <option value="B">Section B</option>
+        <option value="C">Section C</option>
+        <option value="D">Section D</option>
+      </select>
+      <select class="form-control" id="filterFeeStatus">
+        <option value="">All Fee Status</option>
+        <option value="paid">Paid</option>
+        <option value="pending">Pending</option>
+        <option value="partial">Partial</option>
+      </select>
+      <button class="btn btn-outline btn-sm" id="clearFilters">✕ Clear</button>
+      <button class="btn btn-accent" id="openAddModal">👨‍🎓 Add Student</button>
+    </div>
+
+    <!-- Table -->
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-header">
+        <span class="card-title">👨‍🎓 All Students</span>
+        <span id="studentCount" style="font-size:13px;color:var(--text-muted);">Loading…</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div class="table-wrapper">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th style="width:50px;">Photo</th>
+                <th>Name</th>
+                <th style="width:110px;">Class</th>
+                <th>Father's Name</th>
+                <th style="width:120px;">Phone</th>
+                <th style="width:110px;">Fee Status</th>
+                <th style="width:120px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="studentTableBody">
+              <tr><td colspan="7">
+                <div class="empty-state">
+                  <div class="skeleton" style="width:55%;height:14px;margin:0 auto 8px;"></div>
+                  <div class="skeleton" style="width:35%;height:12px;margin:0 auto;"></div>
+                </div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div><!-- /main-content -->
+
+<!-- ═══════════════════════════════════════════════ ADD/EDIT MODAL -->
+<div class="modal-overlay" id="studentModal">
+  <div class="modal-box" style="max-width:700px;">
+    <div class="modal-header">
+      <h3 class="card-title" id="modalTitle">Add New Student</h3>
+      <button class="modal-close" id="closeStudentModal">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Tabs -->
+      <div class="form-tabs">
+        <button class="form-tab active" data-tab="personal">👤 Personal Details</button>
+        <button class="form-tab"        data-tab="parent">👨‍👩‍👧 Parent &amp; Contact</button>
+      </div>
+
+      <!-- TAB 1: Personal Details -->
+      <div class="form-tab-panel active" id="panel-personal">
+
+        <!-- Photo -->
+        <div class="photo-upload-wrap">
+          <div class="photo-upload-ring" id="stPhotoRing" title="Click to upload photo">
+            <div class="photo-upload-hint" id="stUploadHint">
+              <span>📷</span>Upload Photo
+            </div>
+            <img id="stPhotoPreview" src="" alt="" style="display:none;" />
+          </div>
+          <input type="file" id="stPhotoInput" accept="image/*" style="display:none;" />
+          <div id="stPhotoProgress"></div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stName">Full Name *</label>
+            <input type="text" id="stName" class="form-control" placeholder="e.g. Arjun Mehta" />
+          </div>
+          <div class="form-group">
+            <label for="stAdmNo">Admission Number *</label>
+            <input type="text" id="stAdmNo" class="form-control" placeholder="ADM-2024-001" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stEmail">Email * <small style="color:var(--text-muted);">(login email)</small></label>
+            <input type="email" id="stEmail" class="form-control" placeholder="student@school.edu" />
+          </div>
+          <div class="form-group" id="stPasswordGroup">
+            <label for="stPassword">Temporary Password *</label>
+            <div class="pw-wrap">
+              <input type="password" id="stPassword" class="form-control"
+                     placeholder="Min. 6 characters" autocomplete="new-password" />
+              <button class="pw-eye" type="button" id="stPwEye">👁</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stDob">Date of Birth</label>
+            <input type="date" id="stDob" class="form-control" />
+          </div>
+          <div class="form-group">
+            <label for="stGender">Gender</label>
+            <select id="stGender" class="form-control">
+              <option value="">Select…</option>
+              <option value="Male">Male</option>
+              <option value="Female">Female</option>
+              <option value="Other">Other</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stClass">Class *</label>
+            <select id="stClass" class="form-control">
+              <option value="">Select Class…</option>
+              <option value="KG1">KG1</option>
+              <option value="KG2">KG2</option>
+              <option value="1">Class 1</option>
+              <option value="2">Class 2</option>
+              <option value="3">Class 3</option>
+              <option value="4">Class 4</option>
+              <option value="5">Class 5</option>
+              <option value="6">Class 6</option>
+              <option value="7">Class 7</option>
+              <option value="8">Class 8</option>
+              <option value="9">Class 9</option>
+              <option value="10">Class 10</option>
+              <option value="11">Class 11</option>
+              <option value="12">Class 12</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="stSection">Section *</label>
+            <select id="stSection" class="form-control">
+              <option value="">Select Section…</option>
+              <option value="A">Section A</option>
+              <option value="B">Section B</option>
+              <option value="C">Section C</option>
+              <option value="D">Section D</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stBloodGroup">Blood Group</label>
+            <select id="stBloodGroup" class="form-control">
+              <option value="">Select…</option>
+              <option>A+</option><option>A-</option>
+              <option>B+</option><option>B-</option>
+              <option>AB+</option><option>AB-</option>
+              <option>O+</option><option>O-</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label for="stPrevSchool">Previous School</label>
+            <input type="text" id="stPrevSchool" class="form-control" placeholder="Previous school name" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="stAdmDate">Date of Admission</label>
+          <input type="date" id="stAdmDate" class="form-control" />
+        </div>
+
+      </div><!-- /panel-personal -->
+
+      <!-- TAB 2: Parent & Contact -->
+      <div class="form-tab-panel" id="panel-parent">
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stFatherName">Father's Name</label>
+            <input type="text" id="stFatherName" class="form-control" placeholder="Father's full name" />
+          </div>
+          <div class="form-group">
+            <label for="stFatherOcc">Father's Occupation</label>
+            <input type="text" id="stFatherOcc" class="form-control" placeholder="e.g. Engineer" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stMotherName">Mother's Name</label>
+            <input type="text" id="stMotherName" class="form-control" placeholder="Mother's full name" />
+          </div>
+          <div class="form-group">
+            <label for="stMotherOcc">Mother's Occupation</label>
+            <input type="text" id="stMotherOcc" class="form-control" placeholder="e.g. Teacher" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stPhone">Primary Phone *</label>
+            <input type="tel" id="stPhone" class="form-control" placeholder="+91 XXXXX XXXXX" />
+          </div>
+          <div class="form-group">
+            <label for="stWhatsapp">WhatsApp Number</label>
+            <input type="tel" id="stWhatsapp" class="form-control" placeholder="+91 XXXXX XXXXX" />
+          </div>
+        </div>
+
+        <div class="form-row">
+          <div class="form-group">
+            <label for="stParentEmail">Parent Email</label>
+            <input type="email" id="stParentEmail" class="form-control" placeholder="parent@email.com" />
+          </div>
+          <div class="form-group">
+            <label for="stAltPhone">Alternate Phone</label>
+            <input type="tel" id="stAltPhone" class="form-control" placeholder="+91 XXXXX XXXXX" />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label for="stAddress">Address</label>
+          <textarea id="stAddress" class="form-control" rows="2"
+                    placeholder="Residential address…" style="resize:vertical;"></textarea>
+        </div>
+
+        <div class="form-row" style="grid-template-columns:2fr 1fr 1fr;">
+          <div class="form-group">
+            <label for="stCity">City</label>
+            <input type="text" id="stCity" class="form-control" placeholder="City" />
+          </div>
+          <div class="form-group">
+            <label for="stState">State</label>
+            <input type="text" id="stState" class="form-control" placeholder="State" />
+          </div>
+          <div class="form-group">
+            <label for="stPincode">Pincode</label>
+            <input type="text" id="stPincode" class="form-control" placeholder="000000" maxlength="6" />
+          </div>
+        </div>
+
+      </div><!-- /panel-parent -->
+
+    </div><!-- /modal-body -->
+    <div class="modal-footer">
+      <button class="btn btn-outline btn-sm" id="prevTabBtn" style="display:none;">← Personal</button>
+      <button class="btn btn-outline" id="cancelStudentModal">Cancel</button>
+      <button class="btn btn-primary" id="nextTabBtn">Next: Parent Info →</button>
+      <button class="btn btn-primary" id="saveStudentBtn" style="display:none;">Save Student</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ VIEW MODAL -->
+<div class="modal-overlay" id="viewModal">
+  <div class="modal-box" style="max-width:680px;">
+    <div class="modal-header">
+      <h3 class="card-title">👤 Student Profile</h3>
+      <button class="modal-close" id="closeViewModal">✕</button>
+    </div>
+
+    <!-- Profile hero -->
+    <div class="profile-hero" id="viewHero"></div>
+
+    <!-- View tabs -->
+    <div class="view-tabs">
+      <button class="view-tab active" data-vtab="vPersonal">👤 Personal</button>
+      <button class="view-tab"        data-vtab="vFees">💰 Fee History</button>
+      <button class="view-tab"        data-vtab="vMarks">📝 Marks</button>
+      <button class="view-tab"        data-vtab="vDocs">📄 Documents</button>
+    </div>
+
+    <div class="view-tab-panel active" id="vPersonal"></div>
+    <div class="view-tab-panel"        id="vFees"></div>
+    <div class="view-tab-panel"        id="vMarks"></div>
+    <div class="view-tab-panel"        id="vDocs"></div>
+
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="closeViewBtn">Close</button>
+      <button class="btn btn-primary" id="viewEditBtn">✏️ Edit</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- ═══════════════════════════════════════════════ SCRIPT -->
+<script>
+// ── Boot ─────────────────────────────────────────────────────
+checkAdminAuth().then(user => initPage(user));
+
+// ── Clock ─────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('liveClock');
+  const D = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function tick() {
+    const d = new Date(); let h = d.getHours(); const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const p = n => String(n).padStart(2,'0');
+    el.textContent = `${D[d.getDay()]}, ${p(d.getDate())} ${M[d.getMonth()]} ${d.getFullYear()} | ${p(h)}:${p(d.getMinutes())}:${p(d.getSeconds())} ${ap}`;
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+// ── Hamburger ─────────────────────────────────────────────────
+document.getElementById('hamburger').addEventListener('click', () =>
+  document.getElementById('sidebar').classList.toggle('mobile-open'));
+
+// ── Utils ─────────────────────────────────────────────────────
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const gi  = n => (n||'?').trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0,2).join('');
+
+function feeStatusBadge(s) {
+  const map = { paid:'badge-success', pending:'badge-danger', partial:'badge-warning' };
+  const label = s ? s.charAt(0).toUpperCase() + s.slice(1) : 'Pending';
+  return `<span class="badge ${map[s] || 'badge-warning'}">${label}</span>`;
+}
+
+function formatDate(val) {
+  if (!val) return '—';
+  if (val.toDate) val = val.toDate();
+  if (val instanceof Date) {
+    return val.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+  }
+  return String(val);
+}
+
+// ── State ─────────────────────────────────────────────────────
+let allStudents  = [];
+let editMode     = false;
+let editDocId    = null;
+let viewingId    = null;
+let stPhotoFile  = null;
+let stUploadedUrl = '';
+
+// ── Init ──────────────────────────────────────────────────────
+function initPage(user) {
+  document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+  document.getElementById('headerAvatar').textContent   = gi(user.name || user.email);
+
+  db.collection('settings').doc('schoolConfig').get().then(doc => {
+    if (doc.exists && doc.data().schoolName) {
+      document.getElementById('schoolName').textContent = doc.data().schoolName;
+      document.title = `Students — ${doc.data().schoolName}`;
+    }
+  }).catch(()=>{});
+
+  // Live snapshot
+  db.collection('students').orderBy('name').onSnapshot(snap => {
+    allStudents = [];
+    snap.forEach(d => allStudents.push({ id: d.id, ...d.data() }));
+    renderStatsBar();
+    renderTable();
+  }, () => {
+    document.getElementById('studentTableBody').innerHTML =
+      `<tr><td colspan="7"><div class="empty-state">⚠️ Could not load students.</div></td></tr>`;
+  });
+
+  // Filters
+  ['searchInput','filterClass','filterSection','filterFeeStatus'].forEach(id =>
+    document.getElementById(id).addEventListener('input', renderTable));
+  document.getElementById('clearFilters').addEventListener('click', clearFilters);
+}
+
+// ── Stats bar ─────────────────────────────────────────────────
+const CLASS_ORDER = ['KG1','KG2','1','2','3','4','5','6','7','8','9','10','11','12'];
+
+function renderStatsBar() {
+  const bar = document.getElementById('statsBar');
+  const counts = {};
+  allStudents.forEach(s => {
+    const c = s.class || s.className || 'Unknown';
+    counts[c] = (counts[c] || 0) + 1;
+  });
+
+  const total = allStudents.length;
+  const pills = CLASS_ORDER.filter(c => counts[c]).map(c => `
+    <span class="class-stat-pill" data-class="${esc(c)}" onclick="filterByClass('${esc(c)}')">
+      ${c === 'KG1' || c === 'KG2' ? c : 'Class '+c}
+      <strong class="pill-count">${counts[c]}</strong>
+    </span>`).join('');
+
+  bar.innerHTML = `
+    <span class="stats-bar-label">By Class:</span>
+    <span class="class-stat-pill" data-class="" onclick="filterByClass('')">
+      All <strong class="pill-count">${total}</strong>
+    </span>
+    ${pills}`;
+}
+
+window.filterByClass = function(cls) {
+  document.getElementById('filterClass').value = cls;
+  // update active pill
+  document.querySelectorAll('.class-stat-pill').forEach(p =>
+    p.classList.toggle('active', p.dataset.class === cls));
+  renderTable();
+};
+
+// ── Table render ──────────────────────────────────────────────
+function renderTable() {
+  const q   = document.getElementById('searchInput').value.trim().toLowerCase();
+  const cls = document.getElementById('filterClass').value;
+  const sec = document.getElementById('filterSection').value;
+  const fee = document.getElementById('filterFeeStatus').value;
+
+  let list = allStudents.filter(s => {
+    const stClass = s.class || s.className || '';
+    return (!q   || (s.name||'').toLowerCase().includes(q) || (s.admissionNo||'').toLowerCase().includes(q))
+        && (!cls || stClass === cls)
+        && (!sec || (s.section||'') === sec)
+        && (!fee || (s.feeStatus||'pending') === fee);
+  });
+
+  document.getElementById('studentCount').textContent =
+    `${list.length} student${list.length!==1?'s':''}`;
+
+  const tbody = document.getElementById('studentTableBody');
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
+      <div class="ei">👨‍🎓</div>
+      ${!allStudents.length ? 'No students enrolled yet. Click "Add Student" to begin.' : 'No students match your filters.'}
+    </div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = list.map((s,i) => {
+    const stClass = s.class || s.className || '';
+    const photo = s.photoUrl
+      ? `<img class="st-avatar" src="${esc(s.photoUrl)}" alt="${esc(s.name)}" loading="lazy" />`
+      : `<div class="avatar-initials">${gi(s.name)}</div>`;
+
+    return `<tr style="animation-delay:${i*0.025}s">
+      <td>${photo}</td>
+      <td>
+        <div class="st-name">${esc(s.name||'—')}</div>
+        <div class="st-admno">${esc(s.admissionNo||'')}</div>
+      </td>
+      <td>
+        ${stClass ? `<span class="badge badge-primary">${esc(stClass)}${s.section?'-'+esc(s.section):''}</span>` : '—'}
+      </td>
+      <td style="font-size:13px;">${esc(s.fatherName||'—')}</td>
+      <td style="font-size:13px;">${esc(s.phone||'—')}</td>
+      <td>${feeStatusBadge(s.feeStatus)}</td>
+      <td>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-sm btn-outline btn-icon" title="View"
+                  onclick="openViewModal('${s.id}')">👁</button>
+          <button class="btn btn-sm btn-outline btn-icon" title="Edit"
+                  onclick="openEditModal('${s.id}')">✏️</button>
+          <button class="btn btn-sm btn-outline btn-icon" title="Delete"
+                  style="color:var(--danger);"
+                  onclick="deactivateStudent('${s.id}','${esc(s.name||'')}')">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function clearFilters() {
+  document.getElementById('searchInput').value = '';
+  document.getElementById('filterClass').value = '';
+  document.getElementById('filterSection').value = '';
+  document.getElementById('filterFeeStatus').value = '';
+  document.querySelectorAll('.class-stat-pill').forEach(p => p.classList.remove('active'));
+  renderTable();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  ADD/EDIT MODAL — tabs
+// ══════════════════════════════════════════════════════════════
+let activeFormTab = 'personal';
+
+document.querySelectorAll('.form-tab').forEach(btn => {
+  btn.addEventListener('click', () => switchFormTab(btn.dataset.tab));
+});
+
+function switchFormTab(tab) {
+  activeFormTab = tab;
+  document.querySelectorAll('.form-tab').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
+  document.querySelectorAll('.form-tab-panel').forEach(p => p.classList.toggle('active', p.id === 'panel-'+tab));
+  const isParent = tab === 'parent';
+  document.getElementById('nextTabBtn').style.display  = isParent ? 'none' : '';
+  document.getElementById('saveStudentBtn').style.display = isParent ? '' : 'none';
+  document.getElementById('prevTabBtn').style.display  = isParent ? '' : 'none';
+}
+
+document.getElementById('nextTabBtn').addEventListener('click', () => switchFormTab('parent'));
+document.getElementById('prevTabBtn').addEventListener('click', () => switchFormTab('personal'));
+
+// ── Modal open/close ──────────────────────────────────────────
+const studentModal = document.getElementById('studentModal');
+
+function openAddModal() {
+  editMode = false; editDocId = null;
+  stPhotoFile = null; stUploadedUrl = '';
+  resetStudentForm();
+  document.getElementById('modalTitle').textContent  = 'Add New Student';
+  document.getElementById('stPasswordGroup').style.display = '';
+  document.getElementById('stEmail').readOnly = false;
+  document.getElementById('saveStudentBtn').textContent = 'Save Student';
+  switchFormTab('personal');
+  suggestAdmNo();
+  studentModal.classList.add('active');
+}
+
+function openEditModal(id) {
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+  editMode = true; editDocId = id;
+  stUploadedUrl = s.photoUrl || ''; stPhotoFile = null;
+
+  document.getElementById('modalTitle').textContent = 'Edit Student';
+  document.getElementById('stPasswordGroup').style.display = 'none';
+  document.getElementById('stEmail').readOnly = true;
+  document.getElementById('saveStudentBtn').textContent = 'Update Student';
+
+  // Personal
+  document.getElementById('stName').value       = s.name        || '';
+  document.getElementById('stAdmNo').value      = s.admissionNo || '';
+  document.getElementById('stEmail').value      = s.email       || '';
+  document.getElementById('stDob').value        = s.dob         || '';
+  document.getElementById('stGender').value     = s.gender      || '';
+  document.getElementById('stClass').value      = s.class       || s.className || '';
+  document.getElementById('stSection').value    = s.section     || '';
+  document.getElementById('stBloodGroup').value = s.bloodGroup  || '';
+  document.getElementById('stPrevSchool').value = s.prevSchool  || '';
+  document.getElementById('stAdmDate').value    = s.admissionDate || '';
+  // Parent
+  document.getElementById('stFatherName').value = s.fatherName  || '';
+  document.getElementById('stFatherOcc').value  = s.fatherOcc   || '';
+  document.getElementById('stMotherName').value = s.motherName  || '';
+  document.getElementById('stMotherOcc').value  = s.motherOcc   || '';
+  document.getElementById('stPhone').value      = s.phone       || '';
+  document.getElementById('stWhatsapp').value   = s.whatsapp    || '';
+  document.getElementById('stParentEmail').value= s.parentEmail || '';
+  document.getElementById('stAltPhone').value   = s.altPhone    || '';
+  document.getElementById('stAddress').value    = s.address     || '';
+  document.getElementById('stCity').value       = s.city        || '';
+  document.getElementById('stState').value      = s.state       || '';
+  document.getElementById('stPincode').value    = s.pincode     || '';
+
+  if (s.photoUrl) {
+    document.getElementById('stPhotoPreview').src = s.photoUrl;
+    document.getElementById('stPhotoPreview').style.display = '';
+    document.getElementById('stUploadHint').style.display   = 'none';
+  }
+
+  switchFormTab('personal');
+  studentModal.classList.add('active');
+}
+
+function closeStudentModal() {
+  studentModal.classList.remove('active');
+  resetStudentForm();
+}
+
+function resetStudentForm() {
+  ['stName','stAdmNo','stEmail','stPassword','stDob','stPrevSchool','stAdmDate',
+   'stFatherName','stFatherOcc','stMotherName','stMotherOcc',
+   'stPhone','stWhatsapp','stParentEmail','stAltPhone',
+   'stAddress','stCity','stState','stPincode'].forEach(id => {
+     const el = document.getElementById(id);
+     if (el) el.value = '';
+   });
+  ['stGender','stClass','stSection','stBloodGroup'].forEach(id => {
+    const el = document.getElementById(id); if (el) el.value = '';
+  });
+  document.getElementById('stPhotoPreview').style.display = 'none';
+  document.getElementById('stUploadHint').style.display   = 'flex';
+  document.getElementById('stPhotoProgress').textContent  = '';
+  stPhotoFile = null; stUploadedUrl = '';
+}
+
+document.getElementById('openAddModal').addEventListener('click', openAddModal);
+document.getElementById('closeStudentModal').addEventListener('click', closeStudentModal);
+document.getElementById('cancelStudentModal').addEventListener('click', closeStudentModal);
+studentModal.addEventListener('click', e => { if (e.target === studentModal) closeStudentModal(); });
+
+// Photo
+document.getElementById('stPhotoRing').addEventListener('click', () =>
+  document.getElementById('stPhotoInput').click());
+document.getElementById('stPhotoInput').addEventListener('change', function () {
+  const file = this.files[0]; if (!file) return;
+  stPhotoFile = file;
+  const r = new FileReader();
+  r.onload = e => {
+    document.getElementById('stPhotoPreview').src = e.target.result;
+    document.getElementById('stPhotoPreview').style.display = '';
+    document.getElementById('stUploadHint').style.display   = 'none';
+  };
+  r.readAsDataURL(file);
+  document.getElementById('stPhotoProgress').textContent = '📎 Photo selected';
+});
+
+// Password eye
+document.getElementById('stPwEye').addEventListener('click', function () {
+  const inp = document.getElementById('stPassword');
+  const v = inp.type === 'text'; inp.type = v ? 'password' : 'text';
+  this.textContent = v ? '👁' : '🙈';
+});
+
+// Auto-suggest admission number
+async function suggestAdmNo() {
+  try {
+    const year = new Date().getFullYear();
+    const snap = await db.collection('students')
+      .orderBy('admissionNo','desc').limit(30).get();
+    let max = 0;
+    snap.forEach(d => {
+      const m = String(d.data().admissionNo||'').match(/(\d+)$/);
+      if (m) max = Math.max(max, parseInt(m[1]));
+    });
+    document.getElementById('stAdmNo').value = `ADM-${year}-${String(max+1).padStart(3,'0')}`;
+  } catch { /* silent */ }
+}
+
+// ── Save student ──────────────────────────────────────────────
+document.getElementById('saveStudentBtn').addEventListener('click', async function () {
+  const name      = document.getElementById('stName').value.trim();
+  const admNo     = document.getElementById('stAdmNo').value.trim();
+  const email     = document.getElementById('stEmail').value.trim();
+  const password  = document.getElementById('stPassword').value.trim();
+  const stClass   = document.getElementById('stClass').value;
+  const section   = document.getElementById('stSection').value;
+
+  if (!name)    { showToast('Full name is required.', 'error'); switchFormTab('personal'); return; }
+  if (!admNo)   { showToast('Admission number is required.', 'error'); switchFormTab('personal'); return; }
+  if (!email)   { showToast('Email is required.', 'error'); switchFormTab('personal'); return; }
+  if (!editMode && !password)   { showToast('Temporary password is required.', 'error'); switchFormTab('personal'); return; }
+  if (!editMode && password.length < 6) { showToast('Password must be at least 6 characters.', 'error'); switchFormTab('personal'); return; }
+  if (!stClass) { showToast('Please select a class.', 'error'); switchFormTab('personal'); return; }
+
+  this.disabled = true;
+  this.textContent = editMode ? 'Updating…' : 'Saving…';
+
+  try {
+    let photoUrl = stUploadedUrl;
+    if (stPhotoFile) {
+      document.getElementById('stPhotoProgress').textContent = '⏳ Uploading photo…';
+      photoUrl = await uploadToCloudinary(stPhotoFile, 'students');
+      document.getElementById('stPhotoProgress').textContent = '✅ Photo uploaded!';
+    }
+
+    const data = {
+      name,
+      admissionNo:    admNo,
+      email,
+      dob:            document.getElementById('stDob').value,
+      gender:         document.getElementById('stGender').value,
+      class:          stClass,
+      section,
+      bloodGroup:     document.getElementById('stBloodGroup').value,
+      prevSchool:     document.getElementById('stPrevSchool').value.trim(),
+      admissionDate:  document.getElementById('stAdmDate').value,
+      fatherName:     document.getElementById('stFatherName').value.trim(),
+      fatherOcc:      document.getElementById('stFatherOcc').value.trim(),
+      motherName:     document.getElementById('stMotherName').value.trim(),
+      motherOcc:      document.getElementById('stMotherOcc').value.trim(),
+      phone:          document.getElementById('stPhone').value.trim(),
+      whatsapp:       document.getElementById('stWhatsapp').value.trim(),
+      parentEmail:    document.getElementById('stParentEmail').value.trim(),
+      altPhone:       document.getElementById('stAltPhone').value.trim(),
+      address:        document.getElementById('stAddress').value.trim(),
+      city:           document.getElementById('stCity').value.trim(),
+      state:          document.getElementById('stState').value.trim(),
+      pincode:        document.getElementById('stPincode').value.trim(),
+      photoUrl,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (!editMode) {
+      const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+      const uid  = cred.user.uid;
+      data.uid          = uid;
+      data.status       = 'active';
+      data.feeStatus    = 'pending';
+      data.academicYear = '2024-25';
+      data.createdAt    = firebase.firestore.FieldValue.serverTimestamp();
+
+      await db.collection('students').doc(uid).set(data);
+      await db.collection('users').doc(uid).set({
+        uid, email, name, role: 'student',
+        class: stClass, section, admissionNo: admNo,
+        status: 'active',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      await logActivity('Student enrolled: ' + name + ' | ' + admNo);
+      showToast('Student enrolled successfully!', 'success');
+    } else {
+      delete data.email;
+      await db.collection('students').doc(editDocId).update(data);
+      await logActivity('Student updated: ' + name);
+      showToast('Student updated successfully!', 'success');
+    }
+
+    closeStudentModal();
+  } catch (err) {
+    console.error(err);
+    const msgs = {
+      'auth/email-already-in-use': 'This email is already registered.',
+      'auth/invalid-email':        'Please enter a valid email address.',
+      'auth/weak-password':        'Password is too weak (min 6 characters).',
+    };
+    showToast(msgs[err.code] || err.message || 'Failed to save student.', 'error');
+  } finally {
+    this.disabled = false;
+    this.textContent = editMode ? 'Update Student' : 'Save Student';
+  }
+});
+
+// ── Deactivate ────────────────────────────────────────────────
+window.deactivateStudent = async function (id, name) {
+  if (!confirm(`Deactivate ${name || 'this student'}? They will lose portal access.`)) return;
+  try {
+    await db.collection('students').doc(id).update({ status: 'inactive' });
+    await db.collection('users').doc(id).update({ status: 'inactive' });
+    await logActivity('Student deactivated: ' + name);
+    showToast('Student deactivated.', 'warning');
+  } catch { showToast('Could not deactivate student.', 'error'); }
+};
+
+// ══════════════════════════════════════════════════════════════
+//  VIEW MODAL
+// ══════════════════════════════════════════════════════════════
+const viewModal = document.getElementById('viewModal');
+
+window.openViewModal = function (id) {
+  viewingId = id;
+  const s = allStudents.find(x => x.id === id);
+  if (!s) return;
+
+  const stClass = s.class || s.className || '';
+
+  // Hero
+  const photo = s.photoUrl
+    ? `<img src="${esc(s.photoUrl)}" alt="${esc(s.name)}" style="width:90px;height:90px;border-radius:50%;object-fit:cover;border:3px solid var(--primary);" />`
+    : `<div class="avatar-lg" style="width:90px;height:90px;border-radius:50%;font-size:26px;">${gi(s.name)}</div>`;
+  const statusBadge = s.status === 'active'
+    ? `<span class="badge badge-success">Active</span>`
+    : `<span class="badge badge-danger">Inactive</span>`;
+
+  document.getElementById('viewHero').innerHTML = `
+    ${photo}
+    <div class="profile-info">
+      <div class="profile-name">${esc(s.name||'—')}</div>
+      <div class="profile-meta">${esc(s.admissionNo||'')} · ${stClass ? 'Class '+esc(stClass) : ''}${s.section?' '+esc(s.section):''}</div>
+      <div class="profile-badges">
+        ${statusBadge}
+        ${feeStatusBadge(s.feeStatus)}
+        ${s.gender ? `<span class="badge badge-info">${esc(s.gender)}</span>` : ''}
+        ${s.bloodGroup ? `<span class="badge badge-warning">${esc(s.bloodGroup)}</span>` : ''}
+      </div>
+    </div>`;
+
+  // Personal tab
+  const f = (label, val) => `<div class="detail-field"><label>${label}</label><span>${esc(val||'—')}</span></div>`;
+  document.getElementById('vPersonal').innerHTML = `
+    <div class="detail-grid">
+      ${f('Full Name',    s.name)}
+      ${f('Admission No', s.admissionNo)}
+      ${f('Date of Birth', s.dob ? formatDate(s.dob) : null)}
+      ${f('Gender',       s.gender)}
+      ${f('Class',        stClass ? (stClass.startsWith('KG') ? stClass : 'Class '+stClass) : null)}
+      ${f('Section',      s.section)}
+      ${f('Blood Group',  s.bloodGroup)}
+      ${f('Academic Year', s.academicYear)}
+      ${f('Date of Admission', s.admissionDate ? formatDate(s.admissionDate) : null)}
+      ${f('Previous School', s.prevSchool)}
+      ${f('Email',        s.email)}
+      <div class="detail-field" style="grid-column:1/-1;"><label>Father</label><span>${esc(s.fatherName||'—')} ${s.fatherOcc?'('+esc(s.fatherOcc)+')':''}</span></div>
+      <div class="detail-field" style="grid-column:1/-1;"><label>Mother</label><span>${esc(s.motherName||'—')} ${s.motherOcc?'('+esc(s.motherOcc)+')':''}</span></div>
+      ${f('Primary Phone', s.phone)}
+      ${f('WhatsApp',      s.whatsapp)}
+      ${f('Alt. Phone',    s.altPhone)}
+      ${f('Parent Email',  s.parentEmail)}
+      <div class="detail-field" style="grid-column:1/-1;">${f('Address', [s.address, s.city, s.state, s.pincode].filter(Boolean).join(', '))}</div>
+    </div>`;
+
+  // Fees / Marks / Docs: show spinner, load async
+  ['vFees','vMarks','vDocs'].forEach(panelId => {
+    document.getElementById(panelId).innerHTML =
+      `<div class="sub-empty">⏳ Loading…</div>`;
+  });
+
+  // Activate personal tab
+  document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.vtab === 'vPersonal'));
+  document.querySelectorAll('.view-tab-panel').forEach(p => p.classList.toggle('active', p.id === 'vPersonal'));
+
+  viewModal.classList.add('active');
+
+  // Load async panels
+  loadFeeHistory(id);
+  loadMarks(id);
+  loadDocuments(id);
+};
+
+async function loadFeeHistory(uid) {
+  const panel = document.getElementById('vFees');
+  try {
+    const snap = await db.collection('fees').where('studentId','==', uid)
+      .orderBy('paidDate','desc').get();
+    if (snap.empty) {
+      panel.innerHTML = `<div class="sub-empty">💰 No fee records found.</div>`; return;
+    }
+    let total = 0;
+    const rows = [];
+    snap.forEach(d => {
+      const f = d.data();
+      total += Number(f.amount||0);
+      rows.push(`<tr>
+        <td>${formatDate(f.paidDate)}</td>
+        <td>${esc(f.month||f.description||'—')}</td>
+        <td style="font-weight:600;">₹${Number(f.amount||0).toLocaleString('en-IN')}</td>
+        <td>${feeStatusBadge(f.status||'paid')}</td>
+        <td style="font-size:12px;color:var(--text-muted);">${esc(f.receiptNo||'—')}</td>
+      </tr>`);
+    });
+    panel.innerHTML = `
+      <div style="display:flex;justify-content:flex-end;margin-bottom:10px;">
+        <span style="font-size:13px;font-weight:700;color:var(--success);">
+          Total Paid: ₹${total.toLocaleString('en-IN')}
+        </span>
+      </div>
+      <table class="sub-table">
+        <thead><tr><th>Date</th><th>Month / Description</th><th>Amount</th><th>Status</th><th>Receipt No.</th></tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>`;
+  } catch {
+    panel.innerHTML = `<div class="sub-empty">⚠️ Could not load fee history.</div>`;
+  }
+}
+
+async function loadMarks(uid) {
+  const panel = document.getElementById('vMarks');
+  try {
+    const snap = await db.collection('marks').where('studentId','==', uid)
+      .orderBy('examDate','desc').get();
+    if (snap.empty) {
+      panel.innerHTML = `<div class="sub-empty">📝 No marks records found.</div>`; return;
+    }
+    // Group by exam
+    const exams = {};
+    snap.forEach(d => {
+      const m = d.data();
+      const key = m.examName || m.exam || 'Exam';
+      if (!exams[key]) exams[key] = [];
+      exams[key].push(m);
+    });
+    const sections = Object.entries(exams).map(([exam, entries]) => {
+      const rows = entries.map(m => `<tr>
+        <td>${esc(m.subject||'—')}</td>
+        <td style="font-weight:600;">${esc(m.marksObtained ?? m.marks ?? '—')}</td>
+        <td>${esc(m.maxMarks||'100')}</td>
+        <td>${m.marksObtained != null && m.maxMarks
+          ? `<span class="badge ${(m.marksObtained/m.maxMarks)>=0.4?'badge-success':'badge-danger'}">
+               ${Math.round((m.marksObtained/m.maxMarks)*100)}%
+             </span>` : '—'}</td>
+        <td style="font-size:12px;color:var(--text-muted);">${esc(m.grade||'—')}</td>
+      </tr>`).join('');
+      return `<div style="margin-bottom:16px;">
+        <div style="font-size:13px;font-weight:700;color:var(--primary);margin-bottom:8px;">📋 ${esc(exam)}</div>
+        <table class="sub-table">
+          <thead><tr><th>Subject</th><th>Marks</th><th>Max</th><th>%</th><th>Grade</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+      </div>`;
+    });
+    panel.innerHTML = sections.join('');
+  } catch {
+    panel.innerHTML = `<div class="sub-empty">⚠️ Could not load marks.</div>`;
+  }
+}
+
+async function loadDocuments(uid) {
+  const panel = document.getElementById('vDocs');
+  try {
+    const snap = await db.collection('certificates').where('studentId','==', uid).get();
+    if (snap.empty) {
+      panel.innerHTML = `<div class="sub-empty">📄 No documents issued yet.</div>`; return;
+    }
+    const rows = [];
+    snap.forEach(d => {
+      const c = d.data();
+      rows.push(`<tr>
+        <td>${esc(c.type||c.certificateType||'Certificate')}</td>
+        <td>${formatDate(c.issuedDate||c.createdAt)}</td>
+        <td style="font-size:12px;color:var(--text-muted);">${esc(c.serialNo||c.certificateNo||'—')}</td>
+        <td>
+          ${c.fileUrl
+            ? `<a href="${esc(c.fileUrl)}" target="_blank" class="btn btn-sm btn-outline btn-icon">⬇ Download</a>`
+            : '<span style="color:var(--text-muted);font-size:12px;">No file</span>'}
+        </td>
+      </tr>`);
+    });
+    panel.innerHTML = `
+      <table class="sub-table">
+        <thead><tr><th>Document Type</th><th>Issue Date</th><th>Serial No.</th><th>File</th></tr></thead>
+        <tbody>${rows.join('')}</tbody>
+      </table>`;
+  } catch {
+    panel.innerHTML = `<div class="sub-empty">⚠️ Could not load documents.</div>`;
+  }
+}
+
+// View tab switching
+document.querySelectorAll('.view-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const target = btn.dataset.vtab;
+    document.querySelectorAll('.view-tab').forEach(t => t.classList.toggle('active', t.dataset.vtab === target));
+    document.querySelectorAll('.view-tab-panel').forEach(p => p.classList.toggle('active', p.id === target));
+  });
+});
+
+function closeViewModal() { viewModal.classList.remove('active'); viewingId = null; }
+document.getElementById('closeViewModal').addEventListener('click', closeViewModal);
+document.getElementById('closeViewBtn').addEventListener('click', closeViewModal);
+viewModal.addEventListener('click', e => { if (e.target === viewModal) closeViewModal(); });
+document.getElementById('viewEditBtn').addEventListener('click', () => {
+  const id = viewingId; closeViewModal(); if (id) openEditModal(id);
+});
+</script>
+</body>
+</html>

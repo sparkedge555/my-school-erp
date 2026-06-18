@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>My School ERP — Sign In</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+
+  <!-- Resolve assets relative to wherever index.html lives (root or /repo-name/) -->
+  <script>
+    (function () {
+      // Derive the directory that contains index.html, e.g. "/" or "/my-school-erp/"
+      var base = window.location.pathname.replace(/\/[^/]*$/, '/'); // strip filename if any
+      if (!base.endsWith('/')) base += '/';
+
+      function injectScript(rel) {
+        var s = document.createElement('script');
+        s.src = base + rel;
+        document.head.appendChild(s);
+      }
+      function injectStyle(rel) {
+        var l = document.createElement('link');
+        l.rel = 'stylesheet';
+        l.href = base + rel;
+        document.head.appendChild(l);
+      }
+
+      injectScript('assets/firebase-config.js');
+      injectScript('assets/auth-guard.js');
+      injectStyle('assets/style.css');
+
+      // Expose base path so the inline script can build redirect URLs
+      window.__ERP_BASE__ = base;
+    })();
+  </script>
+
+  <style>
+    /* ── Reset & base ─────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --primary:        #1a3c6e;
+      --primary-dark:   #122b52;
+      --primary-light:  #2456a4;
+      --accent:         #f59e0b;
+      --accent-hover:   #d97706;
+      --text-dark:      #1e293b;
+      --text-muted:     #64748b;
+      --border:         #e2e8f0;
+      --input-bg:       #f8fafc;
+      --white:          #ffffff;
+      --error-bg:       #fef2f2;
+      --error-text:     #dc2626;
+      --success-text:   #16a34a;
+      --radius-sm:      8px;
+      --radius-md:      12px;
+      --radius-lg:      16px;
+      --shadow-sm:      0 1px 3px rgba(0,0,0,.08);
+      --shadow-md:      0 4px 16px rgba(0,0,0,.12);
+      --shadow-lg:      0 8px 32px rgba(0,0,0,.18);
+      --transition:     .22s cubic-bezier(.4,0,.2,1);
+    }
+
+    html, body {
+      height: 100%;
+      overflow: hidden;
+      font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+      background: var(--primary);
+    }
+
+    /* ── Full-screen page loader ──────────────────────────────── */
+    .page-loader {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background: var(--primary);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 18px;
+    }
+    .page-loader__ring {
+      width: 52px;
+      height: 52px;
+      border: 4px solid rgba(255,255,255,.2);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .8s linear infinite;
+    }
+    .page-loader__text {
+      color: rgba(255,255,255,.75);
+      font-size: 14px;
+      letter-spacing: .04em;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Two-column layout ────────────────────────────────────── */
+    .erp-layout {
+      display: flex;
+      height: 100vh;
+      width: 100vw;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       LEFT PANEL
+    ══════════════════════════════════════════════════════════ */
+    .erp-left {
+      width: 38%;
+      background: var(--primary);
+      position: relative;
+      display: flex;
+      flex-direction: column;
+      padding: 44px 36px 32px;
+      overflow: hidden;
+    }
+
+    /* Diagonal overlay pattern */
+    .erp-left::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background:
+        repeating-linear-gradient(
+          -55deg,
+          transparent,
+          transparent 28px,
+          rgba(255,255,255,.03) 28px,
+          rgba(255,255,255,.03) 29px
+        );
+      pointer-events: none;
+    }
+
+    /* Radial glow top-left */
+    .erp-left::after {
+      content: '';
+      position: absolute;
+      top: -80px;
+      left: -80px;
+      width: 380px;
+      height: 380px;
+      background: radial-gradient(circle, rgba(255,255,255,.08) 0%, transparent 70%);
+      pointer-events: none;
+    }
+
+    /* Brand block */
+    .erp-brand {
+      position: relative;
+      z-index: 1;
+    }
+    .erp-icon {
+      margin-bottom: 20px;
+      display: block;
+    }
+    .erp-brand__name {
+      font-size: 32px;
+      font-weight: 800;
+      color: #fff;
+      line-height: 1.1;
+      letter-spacing: -.5px;
+    }
+    .erp-brand__tagline {
+      margin-top: 8px;
+      font-size: 14px;
+      color: rgba(255,255,255,.6);
+      line-height: 1.5;
+      font-weight: 400;
+    }
+
+    /* Divider */
+    .erp-divider {
+      position: relative;
+      z-index: 1;
+      margin: 28px 0;
+      height: 1px;
+      background: rgba(255,255,255,.18);
+    }
+
+    /* Portal cards */
+    .erp-cards {
+      position: relative;
+      z-index: 1;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      flex: 1;
+    }
+    .erp-card {
+      background: rgba(255,255,255,.1);
+      border: 1px solid rgba(255,255,255,.14);
+      border-radius: var(--radius-sm);
+      padding: 13px 14px;
+      display: flex;
+      align-items: center;
+      gap: 13px;
+      backdrop-filter: blur(4px);
+      transition: background var(--transition);
+    }
+    .erp-card:hover { background: rgba(255,255,255,.16); }
+    .erp-card__icon {
+      font-size: 22px;
+      line-height: 1;
+      flex-shrink: 0;
+    }
+    .erp-card__title {
+      font-size: 13.5px;
+      font-weight: 700;
+      color: #fff;
+      line-height: 1.2;
+    }
+    .erp-card__desc {
+      font-size: 11.5px;
+      color: rgba(255,255,255,.65);
+      margin-top: 2px;
+    }
+
+    /* Left footer */
+    .erp-left-footer {
+      position: relative;
+      z-index: 1;
+      margin-top: auto;
+      padding-top: 20px;
+      font-size: 11px;
+      color: rgba(255,255,255,.4);
+      text-align: center;
+    }
+
+    /* ══════════════════════════════════════════════════════════
+       RIGHT PANEL
+    ══════════════════════════════════════════════════════════ */
+    .erp-right {
+      width: 62%;
+      background: #fff;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 32px;
+    }
+
+    .erp-form-wrap {
+      width: 100%;
+      max-width: 420px;
+    }
+
+    .erp-form-wrap__heading {
+      font-size: 28px;
+      font-weight: 800;
+      color: var(--text-dark);
+      letter-spacing: -.5px;
+      line-height: 1.15;
+    }
+    .erp-form-wrap__sub {
+      margin-top: 6px;
+      font-size: 14.5px;
+      color: var(--text-muted);
+    }
+
+    /* Form */
+    .erp-form { margin-top: 28px; display: flex; flex-direction: column; gap: 16px; }
+
+    /* Input groups */
+    .field-group { display: flex; flex-direction: column; gap: 6px; }
+    .field-group label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-dark);
+      letter-spacing: .01em;
+    }
+    .field-wrap {
+      position: relative;
+      display: flex;
+      align-items: center;
+    }
+    .field-wrap__icon {
+      position: absolute;
+      left: 14px;
+      font-size: 16px;
+      pointer-events: none;
+      line-height: 1;
+      z-index: 1;
+    }
+    .field-wrap input {
+      width: 100%;
+      height: 48px;
+      padding: 0 44px 0 42px;
+      font-size: 14.5px;
+      color: var(--text-dark);
+      background: var(--input-bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      outline: none;
+      transition: border-color var(--transition), box-shadow var(--transition);
+      font-family: inherit;
+    }
+    .field-wrap input::placeholder { color: #a8b8cc; }
+    .field-wrap input:focus {
+      border-color: var(--primary);
+      box-shadow: 0 0 0 3px rgba(26,60,110,.10);
+      background: #fff;
+    }
+
+    /* Password toggle */
+    .pw-toggle {
+      position: absolute;
+      right: 12px;
+      background: none;
+      border: none;
+      cursor: pointer;
+      font-size: 17px;
+      line-height: 1;
+      color: var(--text-muted);
+      padding: 4px;
+      border-radius: 4px;
+      transition: color var(--transition);
+    }
+    .pw-toggle:hover { color: var(--primary); }
+
+    /* Forgot password */
+    .forgot-row {
+      display: flex;
+      justify-content: flex-end;
+      margin-top: -6px;
+    }
+    .forgot-link {
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--accent-hover);
+      text-decoration: none;
+      cursor: pointer;
+      border: none;
+      background: none;
+      padding: 0;
+      font-family: inherit;
+      transition: color var(--transition);
+    }
+    .forgot-link:hover { color: var(--accent); text-decoration: underline; }
+
+    /* Sign in button */
+    .btn-signin {
+      width: 100%;
+      height: 48px;
+      background: var(--primary);
+      color: #fff;
+      font-size: 15.5px;
+      font-weight: 700;
+      border: none;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      letter-spacing: .02em;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      transition: background var(--transition), transform var(--transition), box-shadow var(--transition);
+      margin-top: 4px;
+      box-shadow: var(--shadow-sm);
+      font-family: inherit;
+    }
+    .btn-signin:hover:not(:disabled) {
+      background: var(--primary-light);
+      box-shadow: 0 4px 14px rgba(26,60,110,.28);
+      transform: translateY(-1px);
+    }
+    .btn-signin:active:not(:disabled) { transform: translateY(0); }
+    .btn-signin:disabled {
+      opacity: .75;
+      cursor: not-allowed;
+    }
+
+    /* Button spinner */
+    .btn-spinner {
+      width: 18px;
+      height: 18px;
+      border: 2.5px solid rgba(255,255,255,.35);
+      border-top-color: #fff;
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+
+    /* Error/info message */
+    .erp-message {
+      display: none;
+      padding: 11px 14px;
+      border-radius: var(--radius-sm);
+      font-size: 13.5px;
+      font-weight: 500;
+      line-height: 1.45;
+    }
+    .erp-message.error {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      background: var(--error-bg);
+      color: var(--error-text);
+      border: 1px solid #fecaca;
+    }
+    .erp-message.success {
+      display: flex;
+      align-items: flex-start;
+      gap: 8px;
+      background: #f0fdf4;
+      color: var(--success-text);
+      border: 1px solid #bbf7d0;
+    }
+    .erp-message__icon { font-size: 15px; flex-shrink: 0; margin-top: 1px; }
+
+    /* Footer hint */
+    .erp-form-hint {
+      margin-top: 22px;
+      text-align: center;
+      font-size: 12px;
+      color: #94a3b8;
+      line-height: 1.5;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- ── Full-screen loader ── -->
+  <div class="page-loader" id="pageLoader">
+    <div class="page-loader__ring"></div>
+    <span class="page-loader__text">Loading School ERP…</span>
+  </div>
+
+  <!-- ── Main layout ── -->
+  <div class="erp-layout" id="loginScreen" style="display:none;">
+
+    <!-- LEFT PANEL -->
+    <aside class="erp-left">
+
+      <!-- Icon -->
+      <div class="erp-brand">
+        <svg class="erp-icon" width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <!-- Shield base -->
+          <path d="M40 6L10 18V40C10 57 24 71 40 76C56 71 70 57 70 40V18L40 6Z"
+                fill="rgba(255,255,255,0.15)" stroke="rgba(255,255,255,0.5)" stroke-width="1.5"/>
+          <!-- Building body -->
+          <rect x="24" y="36" width="32" height="24" rx="1" fill="white" opacity="0.9"/>
+          <!-- Roof triangle -->
+          <polygon points="20,36 40,20 60,36" fill="white"/>
+          <!-- Door -->
+          <rect x="35" y="48" width="10" height="12" rx="1" fill="rgba(26,60,110,0.6)"/>
+          <!-- Windows -->
+          <rect x="27" y="40" width="8" height="6" rx="1" fill="rgba(26,60,110,0.4)"/>
+          <rect x="45" y="40" width="8" height="6" rx="1" fill="rgba(26,60,110,0.4)"/>
+          <!-- Flag -->
+          <line x1="40" y1="20" x2="40" y2="12" stroke="white" stroke-width="1.5"/>
+          <polygon points="40,12 48,15 40,18" fill="rgba(245,158,11,0.9)"/>
+        </svg>
+
+        <h1 class="erp-brand__name">My School ERP</h1>
+        <p class="erp-brand__tagline">Empowering Education Through Technology</p>
+      </div>
+
+      <div class="erp-divider"></div>
+
+      <!-- Portal cards -->
+      <div class="erp-cards">
+        <div class="erp-card">
+          <span class="erp-card__icon">🏫</span>
+          <div>
+            <div class="erp-card__title">Admin Portal</div>
+            <div class="erp-card__desc">Complete school management</div>
+          </div>
+        </div>
+        <div class="erp-card">
+          <span class="erp-card__icon">👨‍🏫</span>
+          <div>
+            <div class="erp-card__title">Teacher Portal</div>
+            <div class="erp-card__desc">Classes, marks &amp; timetable</div>
+          </div>
+        </div>
+        <div class="erp-card">
+          <span class="erp-card__icon">👨‍🎓</span>
+          <div>
+            <div class="erp-card__title">Student Portal</div>
+            <div class="erp-card__desc">Results, fees &amp; documents</div>
+          </div>
+        </div>
+      </div>
+
+      <p class="erp-left-footer">© 2024 My School ERP</p>
+    </aside>
+
+    <!-- RIGHT PANEL -->
+    <main class="erp-right">
+      <div class="erp-form-wrap">
+
+        <h2 class="erp-form-wrap__heading">Welcome Back 👋</h2>
+        <p class="erp-form-wrap__sub">Please sign in to your account</p>
+
+        <div class="erp-form" id="loginForm">
+
+          <!-- Email -->
+          <div class="field-group">
+            <label for="emailInput">Email address</label>
+            <div class="field-wrap">
+              <span class="field-wrap__icon">✉️</span>
+              <input
+                type="email"
+                id="emailInput"
+                placeholder="you@school.edu"
+                autocomplete="email"
+                inputmode="email"
+              />
+            </div>
+          </div>
+
+          <!-- Password -->
+          <div class="field-group">
+            <label for="passwordInput">Password</label>
+            <div class="field-wrap">
+              <span class="field-wrap__icon">🔒</span>
+              <input
+                type="password"
+                id="passwordInput"
+                placeholder="Enter your password"
+                autocomplete="current-password"
+              />
+              <button
+                class="pw-toggle"
+                id="pwToggle"
+                type="button"
+                aria-label="Toggle password visibility"
+              >👁</button>
+            </div>
+          </div>
+
+          <!-- Forgot password -->
+          <div class="forgot-row">
+            <button class="forgot-link" id="forgotBtn" type="button">Forgot Password?</button>
+          </div>
+
+          <!-- Message box -->
+          <div class="erp-message" id="msgBox" role="alert" aria-live="polite">
+            <span class="erp-message__icon" id="msgIcon"></span>
+            <span id="msgText"></span>
+          </div>
+
+          <!-- Sign In -->
+          <button class="btn-signin" id="signInBtn" type="button">
+            <span id="btnLabel">Sign In</span>
+          </button>
+
+        </div>
+
+        <p class="erp-form-hint">Access is role-based. Contact admin for credentials.</p>
+      </div>
+    </main>
+
+  </div><!-- /erp-layout -->
+
+  <script>
+  window.addEventListener('load', function () {
+  (function () {
+    'use strict';
+
+    /* ── Guard: catch firebase-config.js load failures early ── */
+    if (typeof firebase === 'undefined') {
+      document.getElementById('pageLoader').style.display = 'none';
+      document.getElementById('loginScreen').style.display = 'flex';
+      var box = document.getElementById('msgBox');
+      box.className = 'erp-message error';
+      document.getElementById('msgIcon').textContent = '⚠️';
+      document.getElementById('msgText').textContent =
+        'Could not load Firebase. Check your internet connection and refresh.';
+      console.error('firebase is not defined — assets/firebase-config.js failed to load.');
+      return;
+    }
+
+    /* ── Helpers ───────────────────────────────────────────── */
+    const $  = id => document.getElementById(id);
+    const loader    = $('pageLoader');
+    const screen    = $('loginScreen');
+    const signInBtn = $('signInBtn');
+    const btnLabel  = $('btnLabel');
+    const msgBox    = $('msgBox');
+    const msgIcon   = $('msgIcon');
+    const msgText   = $('msgText');
+    const emailIn   = $('emailInput');
+    const passIn    = $('passwordInput');
+
+    function showLoader()  { loader.style.display = 'flex'; }
+    function hideLoader()  { loader.style.display = 'none'; screen.style.display = 'flex'; }
+
+    function showMsg(text, type /* 'error' | 'success' */) {
+      msgBox.className = 'erp-message ' + type;
+      msgIcon.textContent = type === 'error' ? '⚠️' : '✅';
+      msgText.textContent = text;
+    }
+    function clearMsg() {
+      msgBox.className = 'erp-message';
+      msgText.textContent = '';
+    }
+
+    function setLoading(loading) {
+      if (loading) {
+        signInBtn.disabled = true;
+        btnLabel.innerHTML = '';
+        const ring = document.createElement('span');
+        ring.className = 'btn-spinner';
+        const lbl = document.createElement('span');
+        lbl.textContent = 'Signing in…';
+        signInBtn.appendChild(ring);
+        signInBtn.appendChild(lbl);
+      } else {
+        signInBtn.disabled = false;
+        signInBtn.innerHTML = '';
+        btnLabel.textContent = 'Sign In';
+        signInBtn.appendChild(btnLabel);
+      }
+    }
+
+    /* ── Role redirect ──────────────────────────────────────── */
+    function redirectByRole(role) {
+      const base = window.__ERP_BASE__ || '/';
+      const map = {
+        admin:   base + 'admin/dashboard.html',
+        teacher: base + 'teacher/portal.html',
+        student: base + 'student/portal.html',
+      };
+      const dest = map[role];
+      if (dest) {
+        window.location.href = dest;
+      } else {
+        setLoading(false);
+        hideLoader();
+        showMsg('Role not configured. Contact admin.', 'error');
+      }
+    }
+
+    /* ── Firebase error map ──────────────────────────────────── */
+    function mapFirebaseError(code) {
+      const msgs = {
+        'auth/user-not-found':      'No account found with this email.',
+        'auth/wrong-password':      'Incorrect password.',
+        'auth/too-many-requests':   'Too many attempts. Please try again later.',
+        'auth/invalid-email':       'Please enter a valid email address.',
+        'auth/user-disabled':       'This account has been disabled. Contact admin.',
+        'auth/network-request-failed': 'Network error. Check your connection.',
+      };
+      return msgs[code] || 'Login failed. Please try again.';
+    }
+
+    /* ── Auth state observer ──────────────────────────────────── */
+    firebase.auth().onAuthStateChanged(async function (user) {
+      if (user) {
+        try {
+          const doc = await firebase.firestore().collection('users').doc(user.uid).get();
+          if (doc.exists) {
+            redirectByRole(doc.data().role);
+          } else {
+            await firebase.auth().signOut();
+            hideLoader();
+            showMsg('User profile not found. Contact admin.', 'error');
+          }
+        } catch (err) {
+          console.error('Firestore error:', err);
+          hideLoader();
+          showMsg('Could not load user profile. Try again.', 'error');
+        }
+      } else {
+        hideLoader();
+      }
+    });
+
+    /* ── Password toggle ─────────────────────────────────────── */
+    $('pwToggle').addEventListener('click', function () {
+      const visible = passIn.type === 'text';
+      passIn.type = visible ? 'password' : 'text';
+      this.textContent = visible ? '👁' : '🙈';
+    });
+
+    /* ── Sign In ─────────────────────────────────────────────── */
+    signInBtn.addEventListener('click', async function () {
+      clearMsg();
+      const email    = emailIn.value.trim();
+      const password = passIn.value;
+
+      if (!email || !password) {
+        showMsg('Please enter your email and password.', 'error');
+        return;
+      }
+
+      setLoading(true);
+      try {
+        const cred = await firebase.auth().signInWithEmailAndPassword(email, password);
+        const doc  = await firebase.firestore().collection('users').doc(cred.user.uid).get();
+        if (doc.exists) {
+          redirectByRole(doc.data().role);
+        } else {
+          await firebase.auth().signOut();
+          setLoading(false);
+          showMsg('User profile not found. Contact admin.', 'error');
+        }
+      } catch (err) {
+        setLoading(false);
+        showMsg(mapFirebaseError(err.code), 'error');
+      }
+    });
+
+    /* ── Enter key support ───────────────────────────────────── */
+    [emailIn, passIn].forEach(el => {
+      el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') signInBtn.click();
+      });
+    });
+
+    /* ── Forgot password ─────────────────────────────────────── */
+    $('forgotBtn').addEventListener('click', async function () {
+      clearMsg();
+      const prefill = emailIn.value.trim();
+      const email   = window.prompt(
+        'Enter your registered email address to receive a reset link:',
+        prefill
+      );
+      if (!email) return;   // user cancelled
+
+      try {
+        await firebase.auth().sendPasswordResetEmail(email.trim());
+        showMsg('Password reset email sent! Check your inbox.', 'success');
+      } catch (err) {
+        const msgs = {
+          'auth/user-not-found':  'No account found with that email.',
+          'auth/invalid-email':   'Please enter a valid email address.',
+        };
+        showMsg(msgs[err.code] || 'Could not send reset email. Try again.', 'error');
+      }
+    });
+
+  })();
+  }); // end window.addEventListener('load', ...)
+  </script>
+</body>
+</html>

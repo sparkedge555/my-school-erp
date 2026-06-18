@@ -1,0 +1,1340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Fee Management — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css">
+
+  <style>
+    .page-content { overflow-y: auto; }
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    /* ── Clock & header ─────────────────────────────────── */
+    #liveClock {
+      font-size: 12.5px; color: var(--text-muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; cursor: pointer; padding: 5px 9px;
+      font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Page tabs ─────────────────────────────────────── */
+    .page-tabs {
+      display: flex; border-bottom: 2px solid var(--border);
+      margin-bottom: 20px; gap: 0;
+    }
+    .page-tab {
+      padding: 11px 22px; font-size: 14.5px; font-weight: 600;
+      cursor: pointer; background: none; border: none;
+      color: var(--text-muted); border-bottom: 3px solid transparent;
+      margin-bottom: -2px; transition: color .15s, border-color .15s;
+      font-family: inherit;
+    }
+    .page-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .page-tab-panel { display: none; }
+    .page-tab-panel.active { display: block; }
+
+    .empty-state { text-align: center; padding: 40px 16px; color: var(--text-muted); }
+    .empty-state .ei { font-size: 36px; margin-bottom: 10px; }
+
+    @keyframes shimmer {
+      0% { background-position: -600px 0; } 100% { background-position: 600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg,#e8edf3 25%,#f5f7fa 50%,#e8edf3 75%);
+      background-size: 1200px 100%; animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: inline-block;
+    }
+    @keyframes rowIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+    .erp-table tbody tr { animation: rowIn .2s ease both; }
+
+    .modal-close {
+      background: none; border: none; font-size: 20px; cursor: pointer;
+      color: var(--text-muted); line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+
+    /* ── TAB 1: Fee Structure ───────────────────────────── */
+    .toolbar-row {
+      display: flex; justify-content: flex-end; margin-bottom: 16px;
+    }
+    .classwise-amounts {
+      display: flex; flex-wrap: wrap; gap: 4px; max-width: 320px;
+    }
+    .classwise-amounts .amt-pill {
+      background: #eef3fb; color: var(--primary); border-radius: 4px;
+      padding: 2px 7px; font-size: 11.5px; font-weight: 600;
+    }
+    .class-amount-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+      gap: 8px; margin-top: 6px;
+    }
+    .class-amount-field { display: flex; flex-direction: column; gap: 3px; }
+    .class-amount-field label { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+    .class-amount-field input {
+      padding: 6px 8px; font-size: 13px; border: 1px solid var(--border);
+      border-radius: 5px; width: 100%;
+    }
+
+    /* ── TAB 2: Collect Fee ─────────────────────────────── */
+    .collect-grid {
+      display: grid; grid-template-columns: 1fr; gap: 20px;
+    }
+    .student-search-wrap { position: relative; max-width: 480px; }
+    .student-search-wrap input { width: 100%; }
+    .student-suggestions {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow-lg);
+      max-height: 280px; overflow-y: auto; z-index: 50; display: none;
+    }
+    .student-suggestions.show { display: block; }
+    .suggestion-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover { background: #f8f9ff; }
+    .suggestion-avatar {
+      width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0;
+    }
+    .suggestion-avatar-initials {
+      width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: #fff;
+      font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .suggestion-name { font-size: 13.5px; font-weight: 600; }
+    .suggestion-meta { font-size: 11.5px; color: var(--text-muted); }
+    .suggestion-empty { padding: 14px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+    .student-summary-card { display: none; }
+    .student-summary-card.show { display: block; }
+    .summary-hero {
+      display: flex; gap: 16px; align-items: center; margin-bottom: 16px;
+    }
+    .summary-avatar {
+      width: 60px; height: 60px; border-radius: 50%; object-fit: cover;
+      border: 2px solid var(--primary); flex-shrink: 0;
+    }
+    .summary-avatar-initials {
+      width: 60px; height: 60px; border-radius: 50%; background: var(--primary); color: #fff;
+      font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .summary-name { font-size: 17px; font-weight: 700; }
+    .summary-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+    .totals-row {
+      display: flex; gap: 24px; margin: 14px 0; flex-wrap: wrap;
+    }
+    .totals-box { text-align: center; }
+    .totals-box .t-label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .totals-box .t-value { font-size: 26px; font-weight: 700; }
+    .totals-box.due .t-value { color: var(--danger); }
+    .totals-box.paid .t-value { color: var(--success); }
+
+    .sub-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    .sub-table th {
+      background: var(--bg); font-size: 12px; font-weight: 600;
+      color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em;
+      padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border);
+    }
+    .sub-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+    .sub-table tr:last-child td { border-bottom: none; }
+
+    .payment-form-card { display: none; }
+    .payment-form-card.show { display: block; }
+
+    .pw-hide { display: none; }
+
+    /* ── TAB 3: Reports ─────────────────────────────────── */
+    .report-filters {
+      display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; margin-bottom: 18px;
+    }
+    .report-filters .form-group { margin-bottom: 0; min-width: 150px; }
+    .report-stats-grid {
+      display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; margin-bottom: 22px;
+    }
+    @media (max-width: 900px) { .report-stats-grid { grid-template-columns: 1fr 1fr; } }
+    .report-stat-card {
+      background: var(--surface); border-radius: var(--radius); padding: 16px 18px;
+      box-shadow: var(--shadow); border-left: 4px solid var(--primary);
+    }
+    .report-stat-card.collected { border-left-color: var(--success); }
+    .report-stat-card.pending   { border-left-color: var(--danger); }
+    .report-stat-card.receipts  { border-left-color: var(--info); }
+    .report-stat-card.defaulters{ border-left-color: var(--warning); }
+    .report-stat-card .rs-value { font-size: 24px; font-weight: 700; }
+    .report-stat-card .rs-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── Print receipt ──────────────────────────────────── */
+    #printReceiptArea { display: none; }
+    @media print {
+      body * { visibility: hidden; }
+      #printReceiptArea, #printReceiptArea * { visibility: visible; }
+      #printReceiptArea {
+        display: block !important; position: absolute; top: 0; left: 0;
+        width: 100%; padding: 30px;
+      }
+    }
+    .receipt-header { text-align: center; margin-bottom: 18px; border-bottom: 2px solid #1e3a5f; padding-bottom: 12px; }
+    .receipt-header h2 { font-size: 20px; color: #1e3a5f; margin-bottom: 2px; }
+    .receipt-header p { font-size: 12.5px; color: #555; }
+    .receipt-title { text-align: center; font-size: 16px; font-weight: 700; letter-spacing: .08em; margin: 14px 0; }
+    .receipt-meta-row {
+      display: flex; justify-content: space-between; font-size: 13px; margin-bottom: 6px;
+    }
+    .receipt-table { width: 100%; border-collapse: collapse; margin: 16px 0; }
+    .receipt-table th, .receipt-table td {
+      border: 1px solid #ccc; padding: 8px 12px; font-size: 13px; text-align: left;
+    }
+    .receipt-words { font-size: 12.5px; margin: 10px 0; font-style: italic; }
+    .receipt-signature { margin-top: 50px; display: flex; justify-content: flex-end; }
+    .receipt-signature .sig-line { text-align: center; font-size: 12.5px; }
+    .receipt-signature .sig-line .line { border-top: 1px solid #333; width: 180px; margin-bottom: 4px; }
+    .receipt-footer-note { text-align: center; font-size: 11px; color: #888; margin-top: 26px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════ SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html"     data-page="dashboard">📊 Dashboard</a></li>
+    <li><a href="announcements.html" data-page="announcements">📢 Announcements</a></li>
+
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html"  data-page="teachers">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html"  data-page="students">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html" data-page="timetable">📅 Timetable</a></li>
+
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html"      data-page="fees" class="active">💰 Fee Management</a></li>
+
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html"     data-page="marks">📝 Marks &amp; Results</a></li>
+
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html"      data-page="docs">📄 Certificates</a></li>
+
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html"      data-page="team">👥 Team Members</a></li>
+    <li><a href="settings.html"  data-page="settings">⚙️ Settings</a></li>
+  </ul>
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color:rgba(255,255,255,.7);">🚪 Logout</a>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════ MAIN -->
+<div class="main-content">
+
+  <!-- HEADER -->
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">Fee Management</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock">Loading…</div>
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <!-- PAGE BODY -->
+  <main class="page-content">
+
+    <!-- Page tabs -->
+    <div class="page-tabs">
+      <button class="page-tab active" data-ptab="structure">📋 Fee Structure</button>
+      <button class="page-tab"        data-ptab="collect">💵 Collect Fee</button>
+      <button class="page-tab"        data-ptab="reports">📊 Fee Reports</button>
+    </div>
+
+    <!-- ═══════════════ TAB 1: FEE STRUCTURE ═══════════════ -->
+    <div class="page-tab-panel active" id="ptab-structure">
+
+      <div class="toolbar-row">
+        <button class="btn btn-accent" id="openFeeTypeModal">➕ Add Fee Type</button>
+      </div>
+
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <span class="card-title">📋 Fee Structure</span>
+          <span id="feeStructureCount" style="font-size:13px;color:var(--text-muted);">Loading…</span>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-wrapper">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th>Fee Type</th>
+                  <th>Description</th>
+                  <th>Class-wise Amounts</th>
+                  <th style="width:110px;">Frequency</th>
+                  <th style="width:100px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="feeStructureBody">
+                <tr><td colspan="5">
+                  <div class="empty-state">
+                    <div class="skeleton" style="width:55%;height:14px;margin:0 auto 8px;"></div>
+                    <div class="skeleton" style="width:35%;height:12px;margin:0 auto;"></div>
+                  </div>
+                </td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /ptab-structure -->
+
+    <!-- ═══════════════ TAB 2: COLLECT FEE ═══════════════ -->
+    <div class="page-tab-panel" id="ptab-collect">
+
+      <div class="collect-grid">
+
+        <!-- STEP 1: Find Student -->
+        <div class="card">
+          <div class="card-header">
+            <span class="card-title">🔍 Step 1 — Find Student</span>
+          </div>
+          <div class="card-body">
+            <div class="student-search-wrap">
+              <input type="text" id="studentSearchInput" class="form-control"
+                     placeholder="Search by student name or admission number…" autocomplete="off" />
+              <div class="student-suggestions" id="studentSuggestions"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 2: Student Fee Summary -->
+        <div class="card student-summary-card" id="studentSummaryCard">
+          <div class="card-header">
+            <span class="card-title">👤 Step 2 — Student Fee Summary</span>
+          </div>
+          <div class="card-body">
+            <div class="summary-hero" id="summaryHero"></div>
+
+            <div class="table-wrapper">
+              <table class="sub-table">
+                <thead><tr><th>Fee Type</th><th>Annual Amount</th><th>Paid</th><th>Due</th></tr></thead>
+                <tbody id="feeSummaryBody"></tbody>
+              </table>
+            </div>
+
+            <div class="totals-row">
+              <div class="totals-box paid">
+                <div class="t-label">Total Paid</div>
+                <div class="t-value" id="totalPaidVal">₹0</div>
+              </div>
+              <div class="totals-box due">
+                <div class="t-label">Total Due</div>
+                <div class="t-value" id="totalDueVal">₹0</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- STEP 3: Payment Form -->
+        <div class="card payment-form-card" id="paymentFormCard">
+          <div class="card-header">
+            <span class="card-title">💵 Step 3 — Record Payment</span>
+          </div>
+          <div class="card-body">
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="payAmount">Amount (₹) *</label>
+                <input type="number" id="payAmount" class="form-control" min="0" placeholder="0" />
+              </div>
+              <div class="form-group">
+                <label for="payFeeType">Fee Type *</label>
+                <select id="payFeeType" class="form-control">
+                  <option value="">Select Fee Type…</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="payMonth">Month / Period *</label>
+                <select id="payMonth" class="form-control">
+                  <option value="">Select Period…</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="payMode">Payment Mode *</label>
+                <select id="payMode" class="form-control">
+                  <option value="Cash">Cash</option>
+                  <option value="Online Transfer">Online Transfer</option>
+                  <option value="Cheque">Cheque</option>
+                  <option value="DD">DD</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group pw-hide" id="referenceNoGroup">
+                <label for="payReference">Cheque / Reference No.</label>
+                <input type="text" id="payReference" class="form-control" placeholder="Reference number" />
+              </div>
+              <div class="form-group">
+                <label for="payReceiptNo">Receipt No.</label>
+                <input type="text" id="payReceiptNo" class="form-control" readonly />
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="payDate">Payment Date *</label>
+                <input type="date" id="payDate" class="form-control" />
+              </div>
+              <div class="form-group">
+                <label for="payRemarks">Remarks</label>
+                <input type="text" id="payRemarks" class="form-control" placeholder="Optional remarks" />
+              </div>
+            </div>
+
+            <button class="btn btn-primary" id="collectBtn" style="width:100%;margin-top:6px;">
+              🧾 Collect &amp; Print Receipt
+            </button>
+          </div>
+        </div>
+
+      </div><!-- /collect-grid -->
+
+    </div><!-- /ptab-collect -->
+
+    <!-- ═══════════════ TAB 3: FEE REPORTS ═══════════════ -->
+    <div class="page-tab-panel" id="ptab-reports">
+
+      <div class="report-filters">
+        <div class="form-group">
+          <label for="repFrom">From</label>
+          <input type="date" id="repFrom" class="form-control" />
+        </div>
+        <div class="form-group">
+          <label for="repTo">To</label>
+          <input type="date" id="repTo" class="form-control" />
+        </div>
+        <div class="form-group">
+          <label for="repClass">Class</label>
+          <select id="repClass" class="form-control">
+            <option value="">All Classes</option>
+            <option value="KG1">KG1</option>
+            <option value="KG2">KG2</option>
+            <option value="1">Class 1</option>
+            <option value="2">Class 2</option>
+            <option value="3">Class 3</option>
+            <option value="4">Class 4</option>
+            <option value="5">Class 5</option>
+            <option value="6">Class 6</option>
+            <option value="7">Class 7</option>
+            <option value="8">Class 8</option>
+            <option value="9">Class 9</option>
+            <option value="10">Class 10</option>
+            <option value="11">Class 11</option>
+            <option value="12">Class 12</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="runReportBtn">🔎 Run Report</button>
+        <button class="btn btn-outline" id="exportCsvBtn">⬇ Export CSV</button>
+      </div>
+
+      <div class="report-stats-grid">
+        <div class="report-stat-card collected">
+          <div class="rs-value" id="repCollectedVal">₹0</div>
+          <div class="rs-label">Total Collected</div>
+        </div>
+        <div class="report-stat-card pending">
+          <div class="rs-value" id="repPendingVal">₹0</div>
+          <div class="rs-label">Total Pending (est.)</div>
+        </div>
+        <div class="report-stat-card receipts">
+          <div class="rs-value" id="repReceiptsVal">0</div>
+          <div class="rs-label">No. of Receipts</div>
+        </div>
+        <div class="report-stat-card defaulters">
+          <div class="rs-value" id="repDefaultersVal">0</div>
+          <div class="rs-label">Students Defaulting</div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <span class="card-title">🧾 Transactions</span>
+          <span id="reportTxnCount" style="font-size:13px;color:var(--text-muted);"></span>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-wrapper">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Receipt No</th>
+                  <th>Student Name</th>
+                  <th>Class</th>
+                  <th>Amount</th>
+                  <th>Fee Type</th>
+                  <th>Payment Mode</th>
+                  <th>Collected By</th>
+                </tr>
+              </thead>
+              <tbody id="reportTableBody">
+                <tr><td colspan="8"><div class="empty-state">
+                  <div class="ei">📊</div>
+                  Choose filters above and click "Run Report".
+                </div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /ptab-reports -->
+
+  </main>
+</div><!-- /main-content -->
+
+<!-- ═══════════════════════════════════════════════ ADD FEE TYPE MODAL -->
+<div class="modal-overlay" id="feeTypeModal">
+  <div class="modal-box" style="max-width:640px;">
+    <div class="modal-header">
+      <h3 class="card-title">➕ Add Fee Type</h3>
+      <button class="modal-close" id="closeFeeTypeModal">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="form-row">
+        <div class="form-group">
+          <label for="ftName">Fee Type Name *</label>
+          <input type="text" id="ftName" class="form-control" placeholder="e.g. Tuition Fee, Transport, Library" />
+        </div>
+        <div class="form-group">
+          <label for="ftFrequency">Frequency *</label>
+          <select id="ftFrequency" class="form-control">
+            <option value="Monthly">Monthly</option>
+            <option value="Quarterly">Quarterly</option>
+            <option value="Annually">Annually</option>
+            <option value="One-time">One-time</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label for="ftDescription">Description</label>
+        <textarea id="ftDescription" class="form-control" rows="2" placeholder="Brief description…" style="resize:vertical;"></textarea>
+      </div>
+
+      <div class="form-group">
+        <label>Amount per Class (₹)</label>
+        <div class="class-amount-grid" id="ftAmountGrid"><!-- generated by JS --></div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="cancelFeeTypeModal">Cancel</button>
+      <button class="btn btn-primary" id="saveFeeTypeBtn">Save Fee Type</button>
+    </div>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════ PRINT RECEIPT (hidden, used only for printing) -->
+<div id="printReceiptArea"></div>
+
+<div id="toast-container"></div>
+
+<!-- ═══════════════════════════════════════════════ SCRIPT -->
+<script>
+// ── Boot ─────────────────────────────────────────────────────
+checkAdminAuth().then(user => initPage(user));
+
+// ── Clock ─────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('liveClock');
+  const D = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function tick() {
+    const d = new Date(); let h = d.getHours(); const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const p = n => String(n).padStart(2,'0');
+    el.textContent = `${D[d.getDay()]}, ${p(d.getDate())} ${M[d.getMonth()]} ${d.getFullYear()} | ${p(h)}:${p(d.getMinutes())}:${p(d.getSeconds())} ${ap}`;
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+// ── Hamburger ─────────────────────────────────────────────────
+document.getElementById('hamburger').addEventListener('click', () =>
+  document.getElementById('sidebar').classList.toggle('mobile-open'));
+
+// ── Utils ─────────────────────────────────────────────────────
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const gi  = n => (n||'?').trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0,2).join('');
+const fmtINR = n => '₹' + Number(n||0).toLocaleString('en-IN');
+
+function formatDate(val) {
+  if (!val) return '—';
+  if (val.toDate) val = val.toDate();
+  if (val instanceof Date) {
+    return val.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+  }
+  return String(val);
+}
+
+const CLASS_ORDER = ['KG1','KG2','1','2','3','4','5','6','7','8','9','10','11','12'];
+const classLabel = c => (c === 'KG1' || c === 'KG2') ? c : 'Class ' + c;
+
+// Academic-year months: Apr 2024 → Mar 2025 style period list
+function buildAcademicMonths(startYear) {
+  const names = ['Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec','Jan','Feb','Mar'];
+  return names.map((m, i) => {
+    const y = i < 9 ? startYear : startYear + 1;
+    return `${m} ${y}`;
+  });
+}
+const ACADEMIC_MONTHS = buildAcademicMonths(2024);
+
+// Number → words (Indian numbering, for receipt)
+function numberToWordsINR(num) {
+  num = Math.round(Number(num) || 0);
+  if (num === 0) return 'Zero Rupees Only';
+  const ones = ['','One','Two','Three','Four','Five','Six','Seven','Eight','Nine','Ten',
+    'Eleven','Twelve','Thirteen','Fourteen','Fifteen','Sixteen','Seventeen','Eighteen','Nineteen'];
+  const tens = ['','','Twenty','Thirty','Forty','Fifty','Sixty','Seventy','Eighty','Ninety'];
+  function twoDigits(n) {
+    if (n < 20) return ones[n];
+    return tens[Math.floor(n/10)] + (n%10 ? ' ' + ones[n%10] : '');
+  }
+  function threeDigits(n) {
+    if (n < 100) return twoDigits(n);
+    return ones[Math.floor(n/100)] + ' Hundred' + (n%100 ? ' ' + twoDigits(n%100) : '');
+  }
+  let result = '';
+  const crore = Math.floor(num / 10000000); num %= 10000000;
+  const lakh  = Math.floor(num / 100000);   num %= 100000;
+  const thousand = Math.floor(num / 1000);  num %= 1000;
+  const hundred = num;
+  if (crore)    result += threeDigits(crore) + ' Crore ';
+  if (lakh)     result += threeDigits(lakh) + ' Lakh ';
+  if (thousand) result += threeDigits(thousand) + ' Thousand ';
+  if (hundred)  result += threeDigits(hundred);
+  return result.trim() + ' Rupees Only';
+}
+
+// ── Page tab switching ───────────────────────────────────────
+document.querySelectorAll('.page-tab').forEach(btn => {
+  btn.addEventListener('click', () => switchPageTab(btn.dataset.ptab));
+});
+
+function switchPageTab(tab) {
+  document.querySelectorAll('.page-tab').forEach(b => b.classList.toggle('active', b.dataset.ptab === tab));
+  document.querySelectorAll('.page-tab-panel').forEach(p => p.classList.toggle('active', p.id === 'ptab-' + tab));
+}
+
+// ── State ────────────────────────────────────────────────────
+let schoolInfo        = { name: 'My School ERP', address: '' };
+let feeStructureList  = [];     // cached fee_structure docs
+let allStudentsCache  = [];     // cached for search suggestions
+let selectedStudent   = null;   // currently selected student in Collect Fee tab
+let studentFeeRows    = [];     // computed fee summary rows for selected student
+
+// ── Init page ────────────────────────────────────────────────
+function initPage(user) {
+  document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+  document.getElementById('headerAvatar').textContent   = gi(user.name || user.email);
+
+  db.collection('settings').doc('schoolConfig').get().then(doc => {
+    if (doc.exists) {
+      const d = doc.data();
+      if (d.schoolName) {
+        schoolInfo.name = d.schoolName;
+        document.getElementById('schoolName').textContent = d.schoolName;
+        document.title = `Fee Management — ${d.schoolName}`;
+      }
+      if (d.address) schoolInfo.address = d.address;
+    }
+  }).catch(()=>{});
+
+  document.getElementById('payDate').value = new Date().toISOString().slice(0,10);
+
+  initFeeStructureTab();
+  initCollectFeeTab();
+  initReportsTab();
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TAB 1: FEE STRUCTURE
+// ══════════════════════════════════════════════════════════════
+function initFeeStructureTab() {
+  db.collection('fee_structure').orderBy('feeType').onSnapshot(snap => {
+    feeStructureList = [];
+    snap.forEach(d => feeStructureList.push({ id: d.id, ...d.data() }));
+    renderFeeStructureTable();
+    populateFeeTypeDropdown();
+  }, () => {
+    document.getElementById('feeStructureBody').innerHTML =
+      `<tr><td colspan="5"><div class="empty-state">⚠️ Could not load fee structure.</div></td></tr>`;
+  });
+
+  document.getElementById('openFeeTypeModal').addEventListener('click', openFeeTypeModal);
+  document.getElementById('closeFeeTypeModal').addEventListener('click', closeFeeTypeModal);
+  document.getElementById('cancelFeeTypeModal').addEventListener('click', closeFeeTypeModal);
+  document.getElementById('feeTypeModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('feeTypeModal')) closeFeeTypeModal();
+  });
+  document.getElementById('saveFeeTypeBtn').addEventListener('click', saveFeeType);
+
+  buildAmountGrid();
+}
+
+function renderFeeStructureTable() {
+  const tbody = document.getElementById('feeStructureBody');
+  document.getElementById('feeStructureCount').textContent =
+    `${feeStructureList.length} fee type${feeStructureList.length!==1?'s':''}`;
+
+  if (!feeStructureList.length) {
+    tbody.innerHTML = `<tr><td colspan="5"><div class="empty-state">
+      <div class="ei">📋</div>
+      No fee types configured yet. Click "Add Fee Type" to begin.
+    </div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = feeStructureList.map((f,i) => {
+    const amounts = f.amounts || {};
+    const pills = CLASS_ORDER.filter(c => amounts[c] != null && amounts[c] !== '')
+      .map(c => `<span class="amt-pill">${c}: ${fmtINR(amounts[c])}</span>`).join('');
+
+    return `<tr style="animation-delay:${i*0.025}s">
+      <td style="font-weight:600;">${esc(f.feeType||'—')}</td>
+      <td style="font-size:13px;color:var(--text-muted);max-width:240px;">${esc(f.description||'—')}</td>
+      <td><div class="classwise-amounts">${pills || '<span style="color:var(--text-muted);font-size:12px;">No amounts set</span>'}</div></td>
+      <td><span class="badge badge-primary">${esc(f.frequency||'—')}</span></td>
+      <td>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-sm btn-outline btn-icon" title="Edit" onclick="editFeeType('${f.id}')">✏️</button>
+          <button class="btn btn-sm btn-outline btn-icon" title="Delete" style="color:var(--danger);" onclick="deleteFeeType('${f.id}','${esc(f.feeType||'')}')">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+function buildAmountGrid(existingAmounts) {
+  const amounts = existingAmounts || {};
+  const grid = document.getElementById('ftAmountGrid');
+  grid.innerHTML = CLASS_ORDER.map(c => `
+    <div class="class-amount-field">
+      <label>${c === 'KG1' || c === 'KG2' ? c : 'Class '+c}</label>
+      <input type="number" min="0" class="ft-amount-input" data-class="${c}"
+             placeholder="0" value="${amounts[c] != null ? amounts[c] : ''}" />
+    </div>`).join('');
+}
+
+let editingFeeTypeId = null;
+
+function openFeeTypeModal() {
+  editingFeeTypeId = null;
+  document.getElementById('ftName').value = '';
+  document.getElementById('ftDescription').value = '';
+  document.getElementById('ftFrequency').value = 'Monthly';
+  buildAmountGrid();
+  document.querySelector('#feeTypeModal .card-title').textContent = '➕ Add Fee Type';
+  document.getElementById('saveFeeTypeBtn').textContent = 'Save Fee Type';
+  document.getElementById('feeTypeModal').classList.add('active');
+}
+
+window.editFeeType = function (id) {
+  const f = feeStructureList.find(x => x.id === id);
+  if (!f) return;
+  editingFeeTypeId = id;
+  document.getElementById('ftName').value = f.feeType || '';
+  document.getElementById('ftDescription').value = f.description || '';
+  document.getElementById('ftFrequency').value = f.frequency || 'Monthly';
+  buildAmountGrid(f.amounts || {});
+  document.querySelector('#feeTypeModal .card-title').textContent = '✏️ Edit Fee Type';
+  document.getElementById('saveFeeTypeBtn').textContent = 'Update Fee Type';
+  document.getElementById('feeTypeModal').classList.add('active');
+};
+
+function closeFeeTypeModal() {
+  document.getElementById('feeTypeModal').classList.remove('active');
+  editingFeeTypeId = null;
+}
+
+async function saveFeeType() {
+  const feeType    = document.getElementById('ftName').value.trim();
+  const description = document.getElementById('ftDescription').value.trim();
+  const frequency   = document.getElementById('ftFrequency').value;
+
+  if (!feeType) { showToast('Fee type name is required.', 'error'); return; }
+
+  const amounts = {};
+  document.querySelectorAll('.ft-amount-input').forEach(inp => {
+    const v = inp.value.trim();
+    if (v !== '') amounts[inp.dataset.class] = Number(v);
+  });
+
+  const btn = document.getElementById('saveFeeTypeBtn');
+  btn.disabled = true;
+  btn.textContent = editingFeeTypeId ? 'Updating…' : 'Saving…';
+
+  try {
+    const payload = {
+      feeType, description, frequency, amounts,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (editingFeeTypeId) {
+      await db.collection('fee_structure').doc(editingFeeTypeId).update(payload);
+      await logActivity('Updated fee type: ' + feeType);
+      showToast('Fee type updated!', 'success');
+    } else {
+      payload.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+      await db.collection('fee_structure').add(payload);
+      await logActivity('Added fee type: ' + feeType);
+      showToast('Fee type added!', 'success');
+    }
+    closeFeeTypeModal();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save fee type.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = editingFeeTypeId ? 'Update Fee Type' : 'Save Fee Type';
+  }
+}
+
+window.deleteFeeType = async function (id, name) {
+  if (!confirm(`Delete fee type "${name}"? This cannot be undone.`)) return;
+  try {
+    await db.collection('fee_structure').doc(id).delete();
+    await logActivity('Deleted fee type: ' + name);
+    showToast('Fee type deleted.', 'warning');
+  } catch {
+    showToast('Could not delete fee type.', 'error');
+  }
+};
+
+function populateFeeTypeDropdown() {
+  const sel = document.getElementById('payFeeType');
+  if (!sel) return;
+  const currentVal = sel.value;
+  sel.innerHTML = '<option value="">Select Fee Type…</option>' +
+    feeStructureList.map(f => `<option value="${esc(f.feeType)}">${esc(f.feeType)}</option>`).join('');
+  if (currentVal) sel.value = currentVal;
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TAB 2: COLLECT FEE
+// ══════════════════════════════════════════════════════════════
+function initCollectFeeTab() {
+  // Populate month dropdown
+  const monthSel = document.getElementById('payMonth');
+  monthSel.innerHTML = '<option value="">Select Period…</option>' +
+    ACADEMIC_MONTHS.map(m => `<option value="${m}">${m}</option>`).join('');
+
+  // Cache students for fast client-side search-as-you-type
+  db.collection('students').orderBy('name').onSnapshot(snap => {
+    allStudentsCache = [];
+    snap.forEach(d => allStudentsCache.push({ id: d.id, ...d.data() }));
+  }, () => { /* silent */ });
+
+  const searchInput = document.getElementById('studentSearchInput');
+  const suggestionsBox = document.getElementById('studentSuggestions');
+
+  searchInput.addEventListener('input', function () {
+    const q = this.value.trim().toLowerCase();
+    if (!q) { suggestionsBox.classList.remove('show'); suggestionsBox.innerHTML = ''; return; }
+
+    const matches = allStudentsCache.filter(s =>
+      (s.name||'').toLowerCase().includes(q) || (s.admissionNo||'').toLowerCase().includes(q)
+    ).slice(0, 8);
+
+    if (!matches.length) {
+      suggestionsBox.innerHTML = `<div class="suggestion-empty">No students found.</div>`;
+      suggestionsBox.classList.add('show');
+      return;
+    }
+
+    suggestionsBox.innerHTML = matches.map(s => {
+      const stClass = s.class || s.className || '';
+      const avatar = s.photoUrl
+        ? `<img class="suggestion-avatar" src="${esc(s.photoUrl)}" alt="" />`
+        : `<div class="suggestion-avatar-initials">${gi(s.name)}</div>`;
+      return `<div class="suggestion-item" onclick="selectStudentForFee('${s.id}')">
+        ${avatar}
+        <div>
+          <div class="suggestion-name">${esc(s.name||'—')}</div>
+          <div class="suggestion-meta">${esc(s.admissionNo||'')} ${stClass ? '· '+classLabel(stClass)+(s.section?' '+esc(s.section):'') : ''}</div>
+        </div>
+      </div>`;
+    }).join('');
+    suggestionsBox.classList.add('show');
+  });
+
+  document.addEventListener('click', e => {
+    if (!searchInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
+      suggestionsBox.classList.remove('show');
+    }
+  });
+
+  document.getElementById('payMode').addEventListener('change', function () {
+    const needsRef = this.value !== 'Cash';
+    document.getElementById('referenceNoGroup').classList.toggle('pw-hide', !needsRef);
+  });
+
+  document.getElementById('collectBtn').addEventListener('click', handleCollectFee);
+}
+
+window.selectStudentForFee = async function (studentId) {
+  const s = allStudentsCache.find(x => x.id === studentId);
+  if (!s) return;
+  selectedStudent = s;
+
+  document.getElementById('studentSearchInput').value = s.name || '';
+  document.getElementById('studentSuggestions').classList.remove('show');
+
+  const stClass = s.class || s.className || '';
+  const photo = s.photoUrl
+    ? `<img class="summary-avatar" src="${esc(s.photoUrl)}" alt="" />`
+    : `<div class="summary-avatar-initials">${gi(s.name)}</div>`;
+
+  document.getElementById('summaryHero').innerHTML = `
+    ${photo}
+    <div>
+      <div class="summary-name">${esc(s.name||'—')}</div>
+      <div class="summary-meta">${esc(s.admissionNo||'')} · ${stClass ? classLabel(stClass) : ''}${s.section?' '+esc(s.section):''}</div>
+    </div>`;
+
+  document.getElementById('studentSummaryCard').classList.add('show');
+  document.getElementById('paymentFormCard').classList.add('show');
+
+  await loadStudentFeeSummary(s);
+  await suggestReceiptNo();
+};
+
+async function loadStudentFeeSummary(student) {
+  const tbody = document.getElementById('feeSummaryBody');
+  tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">Loading…</td></tr>`;
+
+  const stClass = student.class || student.className || '';
+
+  try {
+    const paidSnap = await db.collection('fees').where('studentId', '==', student.id).get();
+    const paidByType = {};
+    let totalPaid = 0;
+    paidSnap.forEach(d => {
+      const f = d.data();
+      const type = f.feeType || 'Other';
+      paidByType[type] = (paidByType[type] || 0) + Number(f.amount || 0);
+      totalPaid += Number(f.amount || 0);
+    });
+
+    studentFeeRows = feeStructureList.map(f => {
+      const annual = (f.amounts && f.amounts[stClass] != null) ? Number(f.amounts[stClass]) : 0;
+      const paid   = paidByType[f.feeType] || 0;
+      const due    = Math.max(annual - paid, 0);
+      return { feeType: f.feeType, annual, paid, due };
+    });
+
+    // Include any paid fee types that aren't in fee_structure (or have no class amount)
+    Object.keys(paidByType).forEach(type => {
+      if (!studentFeeRows.find(r => r.feeType === type)) {
+        studentFeeRows.push({ feeType: type, annual: 0, paid: paidByType[type], due: 0 });
+      }
+    });
+
+    const totalDue = studentFeeRows.reduce((sum, r) => sum + r.due, 0);
+
+    if (!studentFeeRows.length) {
+      tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--text-muted);">No fee structure configured for this class yet.</td></tr>`;
+    } else {
+      tbody.innerHTML = studentFeeRows.map(r => `<tr>
+        <td>${esc(r.feeType)}</td>
+        <td>${fmtINR(r.annual)}</td>
+        <td style="color:var(--success);font-weight:600;">${fmtINR(r.paid)}</td>
+        <td style="color:${r.due>0?'var(--danger)':'var(--text-muted)'};font-weight:600;">${fmtINR(r.due)}</td>
+      </tr>`).join('');
+    }
+
+    document.getElementById('totalPaidVal').textContent = fmtINR(totalPaid);
+    document.getElementById('totalDueVal').textContent  = fmtINR(totalDue);
+    document.getElementById('payAmount').value = totalDue > 0 ? totalDue : '';
+
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `<tr><td colspan="4" style="text-align:center;color:var(--danger);">⚠️ Could not load fee summary.</td></tr>`;
+  }
+}
+
+// Auto-suggest next receipt number (RCP-2024-0001 style, increments from last receipt)
+async function suggestReceiptNo() {
+  try {
+    const year = new Date().getFullYear();
+    const snap = await db.collection('fees').orderBy('receiptNo', 'desc').limit(30).get();
+    let max = 0;
+    snap.forEach(d => {
+      const m = String(d.data().receiptNo || '').match(/(\d+)$/);
+      if (m) max = Math.max(max, parseInt(m[1]));
+    });
+    document.getElementById('payReceiptNo').value = `RCP-${year}-${String(max+1).padStart(4,'0')}`;
+  } catch {
+    document.getElementById('payReceiptNo').value = `RCP-${new Date().getFullYear()}-0001`;
+  }
+}
+
+async function handleCollectFee() {
+  if (!selectedStudent) { showToast('Please select a student first.', 'error'); return; }
+
+  const amount     = Number(document.getElementById('payAmount').value);
+  const feeType    = document.getElementById('payFeeType').value;
+  const month      = document.getElementById('payMonth').value;
+  const mode       = document.getElementById('payMode').value;
+  const reference  = document.getElementById('payReference').value.trim();
+  const receiptNo  = document.getElementById('payReceiptNo').value.trim();
+  const payDateStr = document.getElementById('payDate').value;
+  const remarks    = document.getElementById('payRemarks').value.trim();
+
+  if (!amount || amount <= 0) { showToast('Please enter a valid amount.', 'error'); return; }
+  if (!feeType)   { showToast('Please select a fee type.', 'error'); return; }
+  if (!month)     { showToast('Please select a month/period.', 'error'); return; }
+  if (!payDateStr){ showToast('Please select a payment date.', 'error'); return; }
+  if (mode !== 'Cash' && !reference) { showToast('Reference/Cheque number is required for this payment mode.', 'error'); return; }
+
+  const btn = document.getElementById('collectBtn');
+  btn.disabled = true;
+  btn.textContent = 'Recording payment…';
+
+  const s = selectedStudent;
+  const stClass = s.class || s.className || '';
+
+  try {
+    const payload = {
+      studentId: s.id,
+      studentName: s.name || '',
+      class: stClass,
+      section: s.section || '',
+      admissionNo: s.admissionNo || '',
+      amount,
+      feeType,
+      month,
+      paymentMode: mode,
+      referenceNo: reference || '',
+      receiptNo,
+      paidDate: firebase.firestore.FieldValue.serverTimestamp(),
+      collectedBy: (window.currentUser && window.currentUser.name) ? window.currentUser.name : 'Admin',
+      academicYear: '2024-25',
+      remarks
+    };
+
+    await db.collection('fees').add(payload);
+
+    // Recompute fee status for this student based on totals
+    await recomputeStudentFeeStatus(s.id, stClass);
+
+    await logActivity(`Fee collected: ₹${amount} from ${s.name} | Receipt: ${receiptNo}`);
+    showToast('Payment recorded! Receipt: ' + receiptNo, 'success');
+
+    printReceipt({ ...payload, paidDateDisplay: new Date(payDateStr) });
+
+    // Refresh summary for the same student, get next receipt no
+    await loadStudentFeeSummary(s);
+    await suggestReceiptNo();
+    document.getElementById('payReference').value = '';
+    document.getElementById('payRemarks').value = '';
+
+  } catch (err) {
+    console.error(err);
+    showToast('Could not record payment.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🧾 Collect & Print Receipt';
+  }
+}
+
+async function recomputeStudentFeeStatus(studentId, stClass) {
+  try {
+    const paidSnap = await db.collection('fees').where('studentId', '==', studentId).get();
+    let totalPaid = 0;
+    const paidByType = {};
+    paidSnap.forEach(d => {
+      const f = d.data();
+      totalPaid += Number(f.amount || 0);
+      paidByType[f.feeType] = (paidByType[f.feeType] || 0) + Number(f.amount || 0);
+    });
+
+    let totalAnnual = 0;
+    feeStructureList.forEach(f => {
+      if (f.amounts && f.amounts[stClass] != null) totalAnnual += Number(f.amounts[stClass]);
+    });
+
+    let feeStatus = 'pending';
+    if (totalAnnual > 0) {
+      if (totalPaid >= totalAnnual) feeStatus = 'paid';
+      else if (totalPaid > 0) feeStatus = 'partial';
+      else feeStatus = 'pending';
+    } else if (totalPaid > 0) {
+      feeStatus = 'paid';
+    }
+
+    await db.collection('students').doc(studentId).update({ feeStatus });
+  } catch (err) {
+    console.error('Could not recompute fee status', err);
+  }
+}
+
+// ── Print Receipt ────────────────────────────────────────────
+function printReceipt(payment) {
+  const area = document.getElementById('printReceiptArea');
+  const dateDisplay = payment.paidDateDisplay
+    ? payment.paidDateDisplay.toLocaleDateString('en-IN', {day:'2-digit',month:'short',year:'numeric'})
+    : formatDate(new Date());
+
+  area.innerHTML = `
+    <div class="receipt-header">
+      <h2>${esc(schoolInfo.name)}</h2>
+      ${schoolInfo.address ? `<p>${esc(schoolInfo.address)}</p>` : ''}
+    </div>
+    <div class="receipt-title">FEE RECEIPT</div>
+    <div class="receipt-meta-row">
+      <span><strong>Receipt No:</strong> ${esc(payment.receiptNo)}</span>
+      <span><strong>Date:</strong> ${dateDisplay}</span>
+      <span><strong>Class:</strong> ${classLabel(payment.class)}${payment.section?' '+esc(payment.section):''}</span>
+    </div>
+    <div class="receipt-meta-row">
+      <span><strong>Student Name:</strong> ${esc(payment.studentName)}</span>
+      <span><strong>Admission No:</strong> ${esc(payment.admissionNo)}</span>
+    </div>
+    <table class="receipt-table">
+      <thead><tr><th>Fee Type</th><th>Period</th><th>Amount</th></tr></thead>
+      <tbody>
+        <tr><td>${esc(payment.feeType)}</td><td>${esc(payment.month)}</td><td>${fmtINR(payment.amount)}</td></tr>
+      </tbody>
+      <tfoot>
+        <tr><td colspan="2" style="text-align:right;font-weight:700;">Total</td><td style="font-weight:700;">${fmtINR(payment.amount)}</td></tr>
+      </tfoot>
+    </table>
+    <div class="receipt-words"><strong>Amount in Words:</strong> ${esc(numberToWordsINR(payment.amount))}</div>
+    <div class="receipt-meta-row">
+      <span><strong>Payment Mode:</strong> ${esc(payment.paymentMode)}${payment.referenceNo?' (Ref: '+esc(payment.referenceNo)+')':''}</span>
+    </div>
+    ${payment.remarks ? `<div class="receipt-meta-row"><span><strong>Remarks:</strong> ${esc(payment.remarks)}</span></div>` : ''}
+    <div class="receipt-signature">
+      <div class="sig-line">
+        <div class="line"></div>
+        Received By: ${esc(payment.collectedBy)}
+      </div>
+    </div>
+    <div class="receipt-footer-note">This is a computer generated receipt.</div>
+  `;
+
+  setTimeout(() => window.print(), 150);
+}
+
+// ══════════════════════════════════════════════════════════════
+//  TAB 3: FEE REPORTS
+// ══════════════════════════════════════════════════════════════
+let lastReportRows = [];   // cached filtered transactions for CSV export
+
+function initReportsTab() {
+  // Default date range: first day of current academic year to today
+  const today = new Date();
+  const defaultFrom = new Date(today.getFullYear(), 0, 1);
+  document.getElementById('repFrom').value = defaultFrom.toISOString().slice(0,10);
+  document.getElementById('repTo').value   = today.toISOString().slice(0,10);
+
+  document.getElementById('runReportBtn').addEventListener('click', runFeeReport);
+  document.getElementById('exportCsvBtn').addEventListener('click', exportReportCsv);
+}
+
+async function runFeeReport() {
+  const fromStr = document.getElementById('repFrom').value;
+  const toStr   = document.getElementById('repTo').value;
+  const cls     = document.getElementById('repClass').value;
+
+  if (!fromStr || !toStr) { showToast('Please select both From and To dates.', 'error'); return; }
+
+  const fromDate = new Date(fromStr + 'T00:00:00');
+  const toDate   = new Date(toStr + 'T23:59:59');
+
+  const tbody = document.getElementById('reportTableBody');
+  tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+    <div class="skeleton" style="width:50%;height:14px;margin:0 auto 8px;"></div>
+    <div class="skeleton" style="width:30%;height:12px;margin:0 auto;"></div>
+  </div></td></tr>`;
+
+  const btn = document.getElementById('runReportBtn');
+  btn.disabled = true;
+  btn.textContent = 'Running…';
+
+  try {
+    let q = db.collection('fees')
+      .where('paidDate', '>=', firebase.firestore.Timestamp.fromDate(fromDate))
+      .where('paidDate', '<=', firebase.firestore.Timestamp.fromDate(toDate));
+
+    const snap = await q.get();
+
+    let rows = [];
+    snap.forEach(d => rows.push({ id: d.id, ...d.data() }));
+    if (cls) rows = rows.filter(r => r.class === cls);
+
+    lastReportRows = rows;
+
+    const totalCollected = rows.reduce((sum, r) => sum + Number(r.amount || 0), 0);
+    const receiptCount   = rows.length;
+
+    // Estimate pending fees + defaulters from current student/fee-structure data
+    const studSnap = await db.collection('students')
+      .where('status', '==', 'active')
+      .get();
+
+    let students = [];
+    studSnap.forEach(d => students.push({ id: d.id, ...d.data() }));
+    if (cls) students = students.filter(s => (s.class || s.className) === cls);
+
+    let totalPending = 0;
+    let defaulters = 0;
+    students.forEach(s => {
+      const stClass = s.class || s.className || '';
+      let annualTotal = 0;
+      feeStructureList.forEach(f => {
+        if (f.amounts && f.amounts[stClass] != null) annualTotal += Number(f.amounts[stClass]);
+      });
+      const paidTotal = rows
+        .filter(r => r.studentId === s.id)
+        .reduce((sum, r) => sum + Number(r.amount || 0), 0);
+      // Note: this uses paidTotal within the selected date range only, as a
+      // best-effort estimate; a precise figure would sum all-time payments.
+      const due = Math.max(annualTotal - paidTotal, 0);
+      if (due > 0) { totalPending += due; defaulters++; }
+    });
+
+    document.getElementById('repCollectedVal').textContent  = fmtINR(totalCollected);
+    document.getElementById('repPendingVal').textContent    = fmtINR(totalPending);
+    document.getElementById('repReceiptsVal').textContent   = receiptCount;
+    document.getElementById('repDefaultersVal').textContent = defaulters;
+
+    renderReportTable(rows);
+
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">⚠️ Could not run report.</div></td></tr>`;
+    showToast('Could not run report.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🔎 Run Report';
+  }
+}
+
+function renderReportTable(rows) {
+  const tbody = document.getElementById('reportTableBody');
+  document.getElementById('reportTxnCount').textContent =
+    `${rows.length} transaction${rows.length!==1?'s':''}`;
+
+  if (!rows.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+      <div class="ei">🧾</div>No transactions found for the selected filters.
+    </div></td></tr>`;
+    return;
+  }
+
+  const sorted = rows.slice().sort((a,b) => {
+    const ad = a.paidDate && a.paidDate.toDate ? a.paidDate.toDate() : new Date(0);
+    const bd = b.paidDate && b.paidDate.toDate ? b.paidDate.toDate() : new Date(0);
+    return bd - ad;
+  });
+
+  tbody.innerHTML = sorted.map(r => `<tr>
+    <td>${formatDate(r.paidDate)}</td>
+    <td style="font-size:12.5px;color:var(--text-muted);">${esc(r.receiptNo||'—')}</td>
+    <td style="font-weight:600;">${esc(r.studentName||'—')}</td>
+    <td>${r.class ? classLabel(r.class)+(r.section?' '+esc(r.section):'') : '—'}</td>
+    <td style="font-weight:600;">${fmtINR(r.amount)}</td>
+    <td>${esc(r.feeType||'—')}</td>
+    <td>${esc(r.paymentMode||'—')}</td>
+    <td>${esc(r.collectedBy||'—')}</td>
+  </tr>`).join('');
+}
+
+function exportReportCsv() {
+  if (!lastReportRows.length) { showToast('Run a report first before exporting.', 'error'); return; }
+
+  const headers = ['Date','Receipt No','Student Name','Class','Section','Amount','Fee Type','Payment Mode','Collected By'];
+  const csvRows = [headers.join(',')];
+
+  const csvEscape = v => {
+    const s = String(v == null ? '' : v);
+    return /[",\n]/.test(s) ? `"${s.replace(/"/g,'""')}"` : s;
+  };
+
+  lastReportRows
+    .slice()
+    .sort((a,b) => {
+      const ad = a.paidDate && a.paidDate.toDate ? a.paidDate.toDate() : new Date(0);
+      const bd = b.paidDate && b.paidDate.toDate ? b.paidDate.toDate() : new Date(0);
+      return bd - ad;
+    })
+    .forEach(r => {
+      csvRows.push([
+        formatDate(r.paidDate),
+        r.receiptNo || '',
+        r.studentName || '',
+        r.class ? classLabel(r.class) : '',
+        r.section || '',
+        r.amount || 0,
+        r.feeType || '',
+        r.paymentMode || '',
+        r.collectedBy || ''
+      ].map(csvEscape).join(','));
+    });
+
+  const csvContent = csvRows.join('\n');
+  const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+  const url  = URL.createObjectURL(blob);
+  const a    = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `fee-report-${stamp}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast('CSV exported.', 'success');
+}
+</script>
+</body>
+</html>

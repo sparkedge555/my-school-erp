@@ -1,0 +1,619 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Marks &amp; Results — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css">
+
+  <style>
+    .page-content { overflow-y: auto; }
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    /* ── Clock & header ─────────────────────────────────── */
+    #liveClock {
+      font-size: 12.5px; color: var(--text-muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; cursor: pointer; padding: 5px 9px;
+      font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Page tabs ─────────────────────────────────────── */
+    .page-tabs {
+      display: flex; border-bottom: 2px solid var(--border);
+      margin-bottom: 20px; gap: 0;
+    }
+    .page-tab {
+      padding: 11px 22px; font-size: 14.5px; font-weight: 600;
+      cursor: pointer; background: none; border: none;
+      color: var(--text-muted); border-bottom: 3px solid transparent;
+      margin-bottom: -2px; transition: color .15s, border-color .15s;
+      font-family: inherit;
+    }
+    .page-tab.active { color: var(--primary); border-bottom-color: var(--primary); }
+    .page-tab-panel { display: none; }
+    .page-tab-panel.active { display: block; }
+
+    .empty-state { text-align: center; padding: 40px 16px; color: var(--text-muted); }
+    .empty-state .ei { font-size: 36px; margin-bottom: 10px; }
+
+    @keyframes shimmer {
+      0% { background-position: -600px 0; } 100% { background-position: 600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg,#e8edf3 25%,#f5f7fa 50%,#e8edf3 75%);
+      background-size: 1200px 100%; animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: inline-block;
+    }
+    @keyframes rowIn { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:none; } }
+    .erp-table tbody tr { animation: rowIn .2s ease both; }
+
+    .modal-close {
+      background: none; border: none; font-size: 20px; cursor: pointer;
+      color: var(--text-muted); line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+
+    /* ── TAB 1: Enter Marks ──────────────────────────────── */
+    .controls-row {
+      display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .controls-row select, .controls-row input { min-width: 130px; }
+    .controls-row .max-marks-input { max-width: 110px; }
+
+    .marks-input { width: 80px; padding: 6px 8px; text-align: center; }
+    .remarks-input { width: 100%; min-width: 140px; padding: 6px 8px; }
+    .grade-badge {
+      display: inline-block; padding: 3px 10px; border-radius: 20px;
+      font-size: 12.5px; font-weight: 700; min-width: 34px; text-align: center;
+    }
+    .grade-Aplus, .grade-A { background: #d4edda; color: #155724; }
+    .grade-Bplus, .grade-B { background: #d1ecf1; color: #0c5460; }
+    .grade-C, .grade-D     { background: #fff3cd; color: #856404; }
+    .grade-F               { background: #f8d7da; color: #721c24; }
+    .grade-dash            { background: #e9ecef; color: var(--text-muted); }
+
+    .sno-cell { color: var(--text-muted); font-size: 13px; width: 40px; }
+    .saved-pill {
+      font-size: 11px; color: var(--success); font-weight: 600; margin-left: 6px;
+    }
+
+    /* ── TAB 2: Report Cards ─────────────────────────────── */
+    .rc-search-row {
+      display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 18px;
+    }
+    .rc-search-row .search-bar { flex: 1; min-width: 240px; }
+    .rc-search-row .search-bar input { width: 100%; }
+    .rc-divider {
+      display: flex; align-items: center; gap: 10px; margin: 4px 0 14px;
+      color: var(--text-muted); font-size: 12.5px; text-transform: uppercase;
+      letter-spacing: .05em;
+    }
+    .rc-divider::before, .rc-divider::after {
+      content: ''; flex: 1; height: 1px; background: var(--border);
+    }
+    .student-suggestions {
+      position: relative;
+    }
+    .rc-suggestions-box {
+      position: absolute; top: calc(100% + 4px); left: 0; right: 0;
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); box-shadow: var(--shadow-lg);
+      max-height: 280px; overflow-y: auto; z-index: 50; display: none;
+    }
+    .rc-suggestions-box.show { display: block; }
+    .suggestion-item {
+      display: flex; align-items: center; gap: 10px;
+      padding: 9px 12px; cursor: pointer; border-bottom: 1px solid var(--border);
+    }
+    .suggestion-item:last-child { border-bottom: none; }
+    .suggestion-item:hover { background: #f8f9ff; }
+    .suggestion-avatar { width: 32px; height: 32px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+    .suggestion-avatar-initials {
+      width: 32px; height: 32px; border-radius: 50%; background: var(--primary); color: #fff;
+      font-size: 12px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .suggestion-name { font-size: 13.5px; font-weight: 600; }
+    .suggestion-meta { font-size: 11.5px; color: var(--text-muted); }
+    .suggestion-empty { padding: 14px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+    .rc-batch-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+
+    .report-card-preview { display: none; margin-top: 20px; }
+    .report-card-preview.show { display: block; }
+
+    .rc-hero {
+      display: flex; gap: 16px; align-items: center; margin-bottom: 16px;
+    }
+    .rc-avatar { width: 60px; height: 60px; border-radius: 50%; object-fit: cover; border: 2px solid var(--primary); flex-shrink: 0; }
+    .rc-avatar-initials {
+      width: 60px; height: 60px; border-radius: 50%; background: var(--primary); color: #fff;
+      font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+    .rc-name { font-size: 17px; font-weight: 700; }
+    .rc-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+
+    .sub-table { width: 100%; border-collapse: collapse; font-size: 13.5px; }
+    .sub-table th {
+      background: var(--bg); font-size: 12px; font-weight: 600;
+      color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em;
+      padding: 8px 12px; text-align: left; border-bottom: 1px solid var(--border);
+    }
+    .sub-table td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+    .sub-table tr:last-child td { border-bottom: none; }
+
+    .rc-summary-row { display: flex; gap: 24px; margin: 16px 0; flex-wrap: wrap; }
+    .rc-summary-box { text-align: center; }
+    .rc-summary-box .s-label { font-size: 11.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+    .rc-summary-box .s-value { font-size: 24px; font-weight: 700; }
+
+    .rc-remarks-area { margin-top: 14px; }
+    .rc-remarks-area label { font-size: 13px; font-weight: 600; display: block; margin-bottom: 6px; }
+    .rc-remarks-area textarea { width: 100%; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13.5px; resize: vertical; font-family: inherit; }
+
+    .batch-rc-list { display: flex; flex-direction: column; gap: 8px; }
+    .batch-rc-item {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 14px; border: 1px solid var(--border); border-radius: 6px;
+    }
+
+    /* ── TAB 3: Result Analysis ──────────────────────────── */
+    .ra-controls-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 20px; }
+
+    .ra-summary-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-bottom: 22px; }
+    @media (max-width: 900px) { .ra-summary-grid { grid-template-columns: 1fr 1fr; } }
+    .ra-stat-card {
+      background: var(--surface); border-radius: var(--radius); padding: 16px 18px;
+      box-shadow: var(--shadow); border-left: 4px solid var(--primary); display: flex; align-items: center; justify-content: space-between;
+    }
+    .ra-stat-card.pass { border-left-color: var(--success); }
+    .ra-stat-card.fail { border-left-color: var(--danger); }
+    .ra-stat-card.absent { border-left-color: var(--warning); }
+    .ra-stat-card .ra-value { font-size: 26px; font-weight: 700; }
+    .ra-stat-card .ra-label { font-size: 12px; color: var(--text-muted); margin-top: 2px; }
+    .ra-stat-card .ra-icon { font-size: 28px; opacity: .3; }
+
+    .bar-chart-row { display: flex; align-items: center; gap: 12px; margin-bottom: 12px; }
+    .bar-chart-label { width: 150px; font-size: 13px; font-weight: 600; flex-shrink: 0; }
+    .bar-chart-track {
+      flex: 1; background: var(--bg); border-radius: 6px; height: 22px; overflow: hidden; position: relative;
+    }
+    .bar-chart-fill {
+      height: 100%; background: linear-gradient(90deg, var(--primary), var(--primary-light));
+      border-radius: 6px; transition: width .4s ease; display: flex; align-items: center; justify-content: flex-end;
+      padding-right: 8px; min-width: 28px;
+    }
+    .bar-chart-fill span { font-size: 11px; color: #fff; font-weight: 700; }
+
+    .grade-dist-table { width: 100%; border-collapse: collapse; max-width: 480px; }
+    .grade-dist-table th, .grade-dist-table td {
+      border: 1px solid var(--border); padding: 8px 14px; text-align: center; font-size: 13.5px;
+    }
+    .grade-dist-table th { background: var(--bg); font-size: 12px; text-transform: uppercase; color: var(--text-muted); }
+
+    .attention-list { display: flex; flex-direction: column; gap: 8px; }
+    .attention-item {
+      display: flex; align-items: center; justify-content: space-between; gap: 10px;
+      padding: 10px 14px; border: 1px solid #fecaca; background: #fff5f5; border-radius: 6px;
+      flex-wrap: wrap;
+    }
+    .attention-name { font-weight: 600; font-size: 13.5px; }
+    .attention-subjects { font-size: 12.5px; color: var(--danger); }
+
+    .rank-badge {
+      display: inline-flex; align-items: center; justify-content: center;
+      width: 26px; height: 26px; border-radius: 50%; font-size: 12.5px; font-weight: 700;
+      background: var(--bg); color: var(--text);
+    }
+    .rank-1 { background: #fff3cd; color: #856404; }
+    .rank-2 { background: #e9ecef; color: #495057; }
+    .rank-3 { background: #ffe5d0; color: #92400e; }
+
+    /* ── Print: report card & two-up batch printing ─────────── */
+    #printArea { display: none; }
+    @media print {
+      body * { visibility: hidden; }
+      #printArea, #printArea * { visibility: visible; }
+      #printArea {
+        display: block !important; position: absolute; top: 0; left: 0;
+        width: 100%; padding: 24px;
+      }
+      .print-page-break { page-break-after: always; }
+    }
+    .pr-header { text-align: center; margin-bottom: 14px; border-bottom: 2px solid #1e3a5f; padding-bottom: 10px; }
+    .pr-header h2 { font-size: 19px; color: #1e3a5f; margin-bottom: 2px; }
+    .pr-header .pr-sub { font-size: 13px; font-weight: 700; letter-spacing: .08em; margin-top: 4px; }
+    .pr-meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px 20px; font-size: 13px; margin: 12px 0 16px; }
+    .pr-table { width: 100%; border-collapse: collapse; margin: 14px 0; }
+    .pr-table th, .pr-table td { border: 1px solid #ccc; padding: 7px 10px; font-size: 12.5px; text-align: center; }
+    .pr-table th { background: #f0f4f8; }
+    .pr-table td:first-child, .pr-table th:first-child { text-align: left; }
+    .pr-summary-row { display: flex; justify-content: space-around; margin: 16px 0; text-align: center; }
+    .pr-summary-row div .pr-s-val { font-size: 18px; font-weight: 700; }
+    .pr-summary-row div .pr-s-lbl { font-size: 11px; color: #666; }
+    .pr-remarks-block { margin-top: 14px; font-size: 12.5px; }
+    .pr-remarks-block strong { display: block; margin-bottom: 2px; }
+    .pr-sign-row { display: flex; justify-content: space-between; margin-top: 50px; font-size: 12px; }
+    .pr-sign-row .line { border-top: 1px solid #333; width: 150px; margin-bottom: 4px; }
+    .pr-footer-note { text-align: center; font-size: 10.5px; color: #888; margin-top: 24px; }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════ SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html"     data-page="dashboard">📊 Dashboard</a></li>
+    <li><a href="announcements.html" data-page="announcements">📢 Announcements</a></li>
+
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html"  data-page="teachers">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html"  data-page="students">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html" data-page="timetable">📅 Timetable</a></li>
+
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html"      data-page="fees">💰 Fee Management</a></li>
+
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html"     data-page="marks" class="active">📝 Marks &amp; Results</a></li>
+
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html"      data-page="docs">📄 Certificates</a></li>
+
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html"      data-page="team">👥 Team Members</a></li>
+    <li><a href="settings.html"  data-page="settings">⚙️ Settings</a></li>
+  </ul>
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color:rgba(255,255,255,.7);">🚪 Logout</a>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════ MAIN -->
+<div class="main-content">
+
+  <!-- HEADER -->
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">Marks &amp; Results</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock">Loading…</div>
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <!-- PAGE BODY -->
+  <main class="page-content">
+
+    <!-- Page tabs -->
+    <div class="page-tabs">
+      <button class="page-tab active" data-ptab="enter">📝 Enter Marks</button>
+      <button class="page-tab"        data-ptab="reportcards">📄 Report Cards</button>
+      <button class="page-tab"        data-ptab="analysis">📊 Result Analysis</button>
+    </div>
+
+    <!-- ═══════════════ TAB 1: ENTER MARKS ═══════════════ -->
+    <div class="page-tab-panel active" id="ptab-enter">
+
+      <div class="controls-row">
+        <select class="form-control" id="emClass">
+          <option value="">Select Class…</option>
+          <option value="KG1">KG1</option>
+          <option value="KG2">KG2</option>
+          <option value="1">Class 1</option>
+          <option value="2">Class 2</option>
+          <option value="3">Class 3</option>
+          <option value="4">Class 4</option>
+          <option value="5">Class 5</option>
+          <option value="6">Class 6</option>
+          <option value="7">Class 7</option>
+          <option value="8">Class 8</option>
+          <option value="9">Class 9</option>
+          <option value="10">Class 10</option>
+          <option value="11">Class 11</option>
+          <option value="12">Class 12</option>
+        </select>
+        <select class="form-control" id="emSection">
+          <option value="">Select Section…</option>
+          <option value="A">Section A</option>
+          <option value="B">Section B</option>
+          <option value="C">Section C</option>
+          <option value="D">Section D</option>
+        </select>
+        <select class="form-control" id="emSubject">
+          <option value="">Select Subject…</option>
+        </select>
+        <select class="form-control" id="emExamType">
+          <option value="">Select Exam Type…</option>
+          <option value="Unit Test 1">Unit Test 1</option>
+          <option value="Unit Test 2">Unit Test 2</option>
+          <option value="Half Yearly">Half Yearly</option>
+          <option value="Annual">Annual</option>
+          <option value="Pre-Board">Pre-Board</option>
+          <option value="Practical">Practical</option>
+        </select>
+        <input type="number" class="form-control max-marks-input" id="emMaxMarks" placeholder="Max Marks" value="100" min="1" />
+        <button class="btn btn-primary" id="loadStudentsBtn">📥 Load Students</button>
+      </div>
+
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <span class="card-title">📝 Student Marks</span>
+          <span id="marksTableStatus" style="font-size:13px;color:var(--text-muted);"></span>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-wrapper">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th style="width:50px;">S.No</th>
+                  <th>Student Name</th>
+                  <th style="width:130px;">Admission No</th>
+                  <th style="width:140px;">Marks Obtained</th>
+                  <th style="width:90px;">Grade</th>
+                  <th>Remarks</th>
+                </tr>
+              </thead>
+              <tbody id="marksTableBody">
+                <tr><td colspan="6"><div class="empty-state">
+                  <div class="ei">📝</div>
+                  Select class, section, subject &amp; exam type above, then click "Load Students".
+                </div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="modal-footer" id="marksSaveFooter" style="display:none;">
+          <button class="btn btn-primary" id="saveAllMarksBtn">💾 Save All Marks</button>
+        </div>
+      </div>
+
+    </div><!-- /ptab-enter -->
+
+    <!-- ═══════════════ TAB 2: REPORT CARDS ═══════════════ -->
+    <div class="page-tab-panel" id="ptab-reportcards">
+
+      <div class="card" style="margin-bottom:20px;">
+        <div class="card-header">
+          <span class="card-title">🔍 Find Student</span>
+        </div>
+        <div class="card-body">
+          <div class="rc-search-row">
+            <div class="search-bar student-suggestions" style="flex:1;">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="rcSearchInput" class="form-control" placeholder="Search by student name or admission number…" autocomplete="off" />
+              <div class="rc-suggestions-box" id="rcSuggestions"></div>
+            </div>
+          </div>
+
+          <div class="rc-divider">or generate for a whole class</div>
+
+          <div class="rc-batch-row">
+            <select class="form-control" id="rcBatchClass">
+              <option value="">Select Class…</option>
+              <option value="KG1">KG1</option>
+              <option value="KG2">KG2</option>
+              <option value="1">Class 1</option>
+              <option value="2">Class 2</option>
+              <option value="3">Class 3</option>
+              <option value="4">Class 4</option>
+              <option value="5">Class 5</option>
+              <option value="6">Class 6</option>
+              <option value="7">Class 7</option>
+              <option value="8">Class 8</option>
+              <option value="9">Class 9</option>
+              <option value="10">Class 10</option>
+              <option value="11">Class 11</option>
+              <option value="12">Class 12</option>
+            </select>
+            <select class="form-control" id="rcBatchSection">
+              <option value="">Select Section…</option>
+              <option value="A">Section A</option>
+              <option value="B">Section B</option>
+              <option value="C">Section C</option>
+              <option value="D">Section D</option>
+            </select>
+            <button class="btn btn-primary" id="rcLoadBatchBtn">📋 List Class</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Batch list (class roster with "View Report Card" per student) -->
+      <div class="card" id="rcBatchListCard" style="display:none;margin-bottom:20px;">
+        <div class="card-header">
+          <span class="card-title">📋 Class Roster</span>
+          <span id="rcBatchCount" style="font-size:13px;color:var(--text-muted);"></span>
+        </div>
+        <div class="card-body">
+          <div class="batch-rc-list" id="rcBatchList"></div>
+        </div>
+      </div>
+
+      <!-- Individual report card preview -->
+      <div class="card report-card-preview" id="reportCardPreview">
+        <div class="card-header">
+          <span class="card-title">📄 Progress Report Preview</span>
+          <button class="btn btn-primary btn-sm" id="printReportCardBtn">🖨 Print Report Card</button>
+        </div>
+        <div class="card-body">
+          <div class="rc-hero" id="rcHero"></div>
+
+          <div class="table-wrapper">
+            <table class="sub-table" id="rcMarksTable">
+              <thead><tr><th>Subject</th><th>UT1</th><th>UT2</th><th>Half Yearly</th><th>Annual</th><th>Total</th><th>Grade</th></tr></thead>
+              <tbody id="rcMarksBody"></tbody>
+            </table>
+          </div>
+
+          <div class="rc-summary-row">
+            <div class="rc-summary-box">
+              <div class="s-label">Total Marks</div>
+              <div class="s-value" id="rcTotalMarks">—</div>
+            </div>
+            <div class="rc-summary-box">
+              <div class="s-label">Percentage</div>
+              <div class="s-value" id="rcPercentage">—</div>
+            </div>
+            <div class="rc-summary-box">
+              <div class="s-label">Overall Grade</div>
+              <div class="s-value" id="rcOverallGrade">—</div>
+            </div>
+            <div class="rc-summary-box">
+              <div class="s-label">Class Rank</div>
+              <div class="s-value" id="rcClassRank">—</div>
+            </div>
+          </div>
+
+          <div class="rc-remarks-area">
+            <label for="rcTeacherRemarks">Teacher's Remarks</label>
+            <textarea id="rcTeacherRemarks" rows="2" placeholder="e.g. Shows consistent improvement…"></textarea>
+          </div>
+          <div class="rc-remarks-area">
+            <label for="rcPrincipalRemarks">Principal's Remarks</label>
+            <textarea id="rcPrincipalRemarks" rows="2" placeholder="e.g. Promoted to next class…"></textarea>
+          </div>
+        </div>
+      </div>
+
+    </div><!-- /ptab-reportcards -->
+
+    <!-- ═══════════════ TAB 3: RESULT ANALYSIS ═══════════════ -->
+    <div class="page-tab-panel" id="ptab-analysis">
+
+      <div class="ra-controls-row">
+        <select class="form-control" id="raClass">
+          <option value="">Select Class…</option>
+          <option value="KG1">KG1</option>
+          <option value="KG2">KG2</option>
+          <option value="1">Class 1</option>
+          <option value="2">Class 2</option>
+          <option value="3">Class 3</option>
+          <option value="4">Class 4</option>
+          <option value="5">Class 5</option>
+          <option value="6">Class 6</option>
+          <option value="7">Class 7</option>
+          <option value="8">Class 8</option>
+          <option value="9">Class 9</option>
+          <option value="10">Class 10</option>
+          <option value="11">Class 11</option>
+          <option value="12">Class 12</option>
+        </select>
+        <select class="form-control" id="raExamType">
+          <option value="">Select Exam Type…</option>
+          <option value="Unit Test 1">Unit Test 1</option>
+          <option value="Unit Test 2">Unit Test 2</option>
+          <option value="Half Yearly">Half Yearly</option>
+          <option value="Annual">Annual</option>
+          <option value="Pre-Board">Pre-Board</option>
+          <option value="Practical">Practical</option>
+        </select>
+        <button class="btn btn-primary" id="analyzeBtn">📊 Analyze</button>
+      </div>
+
+      <div id="analysisResults" style="display:none;">
+
+        <!-- 1. Pass/Fail summary -->
+        <div class="ra-summary-grid">
+          <div class="ra-stat-card pass">
+            <div><div class="ra-value" id="raPassedVal">0</div><div class="ra-label">Passed</div></div>
+            <div class="ra-icon">✅</div>
+          </div>
+          <div class="ra-stat-card fail">
+            <div><div class="ra-value" id="raFailedVal">0</div><div class="ra-label">Failed</div></div>
+            <div class="ra-icon">❌</div>
+          </div>
+          <div class="ra-stat-card absent">
+            <div><div class="ra-value" id="raAbsentVal">0</div><div class="ra-label">Absent</div></div>
+            <div class="ra-icon">🚫</div>
+          </div>
+        </div>
+
+        <!-- 2. Subject-wise average -->
+        <div class="card" style="margin-bottom:20px;">
+          <div class="card-header"><span class="card-title">📊 Subject-wise Average</span></div>
+          <div class="card-body" id="raBarChart"></div>
+        </div>
+
+        <!-- 3 & 4: Grade distribution + Top performers -->
+        <div class="two-col-analysis" style="display:grid;grid-template-columns:1fr 1.3fr;gap:20px;margin-bottom:20px;">
+          <div class="card">
+            <div class="card-header"><span class="card-title">🏆 Grade Distribution</span></div>
+            <div class="card-body" id="raGradeDist"></div>
+          </div>
+          <div class="card">
+            <div class="card-header"><span class="card-title">⭐ Top 5 Performers</span></div>
+            <div class="card-body" style="padding:0;">
+              <div class="table-wrapper">
+                <table class="erp-table">
+                  <thead><tr><th style="width:60px;">Rank</th><th>Name</th><th>Total Marks</th><th>Percentage</th></tr></thead>
+                  <tbody id="raTopPerformers"></tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- 5. Students needing attention -->
+        <div class="card" style="margin-bottom:24px;">
+          <div class="card-header"><span class="card-title">⚠️ Students Needing Attention</span></div>
+          <div class="card-body">
+            <div class="attention-list" id="raAttentionList"></div>
+          </div>
+        </div>
+
+      </div><!-- /analysisResults -->
+
+      <div class="empty-state" id="analysisEmptyState">
+        <div class="ei">📊</div>
+        Select a class and exam type, then click "Analyze".
+      </div>
+
+    </div><!-- /ptab-analysis -->
+
+  </main>
+</div><!-- /main-content -->
+
+<!-- ═══════════════════════════════════════════════ PRINT AREA (hidden, used only for printing) -->
+<div id="printArea"></div>
+
+<div id="toast-container"></div>
+
+<!-- ═══════════════════════════════════════════════ SCRIPT -->
+<script>
+// JS will be added here
+</script>
+</body>
+</html>

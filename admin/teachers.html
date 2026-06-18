@@ -1,0 +1,927 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Teachers — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css">
+
+  <style>
+    /* ── Layout basics ────────────────────────────────────── */
+    .page-content { overflow-y: auto; }
+
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    /* ── Live clock ─────────────────────────────────────── */
+    #liveClock {
+      font-size: 12.5px; color: var(--text-muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; cursor: pointer; padding: 5px 9px;
+      font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Toolbar ─────────────────────────────────────────── */
+    .toolbar {
+      display: flex; align-items: center; gap: 12px;
+      flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .toolbar .search-bar { flex: 1; min-width: 200px; }
+    .toolbar .search-bar input { width: 100%; }
+
+    /* ── Teacher table extras ────────────────────────────── */
+    .teacher-avatar {
+      width: 40px; height: 40px; border-radius: 50%;
+      object-fit: cover; border: 2px solid var(--border);
+      display: block;
+    }
+    .avatar-initials {
+      width: 40px; height: 40px; border-radius: 50%;
+      background: var(--primary); color: #fff;
+      font-size: 14px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+      flex-shrink: 0;
+    }
+    .teacher-name { font-weight: 600; font-size: 14px; line-height: 1.3; }
+    .teacher-empid { font-size: 11.5px; color: var(--text-muted); }
+    .classes-cell { display: flex; flex-wrap: wrap; gap: 3px; max-width: 180px; }
+
+    /* row fade-in */
+    @keyframes rowIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
+    .erp-table tbody tr { animation: rowIn .22s ease both; }
+
+    /* empty & loading */
+    .empty-state { text-align: center; padding: 40px 16px; color: var(--text-muted); }
+    .empty-state .empty-icon { font-size: 36px; margin-bottom: 10px; }
+
+    @keyframes shimmer {
+      0% { background-position: -600px 0; } 100% { background-position: 600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg,#e8edf3 25%,#f5f7fa 50%,#e8edf3 75%);
+      background-size: 1200px 100%; animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: inline-block;
+    }
+
+    /* ── Modal overrides ──────────────────────────────────── */
+    .modal-close {
+      background: none; border: none; font-size: 20px; cursor: pointer;
+      color: var(--text-muted); line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+
+    /* Photo upload */
+    .photo-upload-wrap {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 10px; margin-bottom: 4px;
+    }
+    .photo-upload-ring {
+      width: 96px; height: 96px; border-radius: 50%;
+      border: 3px dashed var(--border); cursor: pointer;
+      display: flex; align-items: center; justify-content: center;
+      overflow: hidden; background: var(--bg); position: relative;
+      transition: border-color .2s;
+    }
+    .photo-upload-ring:hover { border-color: var(--primary); }
+    .photo-upload-ring img { width: 100%; height: 100%; object-fit: cover; border-radius: 50%; }
+    .photo-upload-ring .upload-hint {
+      display: flex; flex-direction: column; align-items: center;
+      gap: 4px; font-size: 11px; color: var(--text-muted); text-align: center; padding: 8px;
+    }
+    .photo-upload-ring .upload-hint span { font-size: 22px; }
+    #photoProgress { font-size: 12px; color: var(--primary); min-height: 18px; }
+
+    /* Classes multi-check */
+    .class-check-grid {
+      display: grid; grid-template-columns: repeat(auto-fill, minmax(72px, 1fr)); gap: 6px;
+    }
+    .class-check-label {
+      display: flex; align-items: center; gap: 5px;
+      font-size: 13px; cursor: pointer; padding: 4px 8px;
+      border: 1px solid var(--border); border-radius: 5px;
+      transition: background .15s, border-color .15s;
+    }
+    .class-check-label:hover { background: var(--bg); }
+    .class-check-label input:checked + span { font-weight: 600; color: var(--primary); }
+    .class-check-label:has(input:checked) {
+      background: #eef3fb; border-color: var(--primary);
+    }
+
+    /* View profile modal */
+    .profile-hero {
+      display: flex; gap: 20px; align-items: flex-start;
+      padding: 20px; border-bottom: 1px solid var(--border);
+    }
+    .profile-hero img, .profile-hero .avatar-lg {
+      width: 100px; height: 100px; border-radius: 50%;
+      object-fit: cover; border: 3px solid var(--primary); flex-shrink: 0;
+    }
+    .avatar-lg {
+      background: var(--primary); color: #fff;
+      font-size: 32px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .profile-info { flex: 1; }
+    .profile-name { font-size: 22px; font-weight: 700; color: var(--text); }
+    .profile-meta { font-size: 13px; color: var(--text-muted); margin-top: 3px; }
+    .profile-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+
+    .profile-grid {
+      display: grid; grid-template-columns: 1fr 1fr; gap: 12px 20px;
+      padding: 20px;
+    }
+    .profile-field label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--text-muted); display: block; margin-bottom: 2px;
+    }
+    .profile-field span { font-size: 14px; font-weight: 500; }
+
+    /* Timetable section */
+    .timetable-section { padding: 0 20px 20px; }
+    .timetable-section h4 { font-size: 14px; font-weight: 700; margin-bottom: 12px; color: var(--text); }
+    .tt-day { margin-bottom: 10px; }
+    .tt-day-name { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .08em; color: var(--text-muted); margin-bottom: 4px; }
+    .tt-slots { display: flex; flex-wrap: wrap; gap: 5px; }
+    .tt-slot {
+      background: #eef3fb; border: 1px solid #c5d5ee; border-radius: 5px;
+      padding: 4px 10px; font-size: 12px; font-weight: 500; color: var(--primary);
+    }
+    .tt-empty { font-size: 13px; color: var(--text-muted); padding: 10px 0; }
+
+    /* password toggle in form */
+    .pw-field-wrap { position: relative; }
+    .pw-field-wrap input { padding-right: 38px; }
+    .pw-eye-btn {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; font-size: 15px;
+      color: var(--text-muted); padding: 2px;
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ══════════════════════════════════════════════════════ SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html"      data-page="dashboard">📊 Dashboard</a></li>
+    <li><a href="announcements.html"  data-page="announcements">📢 Announcements</a></li>
+
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html"  data-page="teachers" class="active">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html"  data-page="students">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html" data-page="timetable">📅 Timetable</a></li>
+
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html"      data-page="fees">💰 Fee Management</a></li>
+
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html"     data-page="marks">📝 Marks &amp; Results</a></li>
+
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html"      data-page="docs">📄 Certificates</a></li>
+
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html"      data-page="team">👥 Team Members</a></li>
+    <li><a href="settings.html"  data-page="settings">⚙️ Settings</a></li>
+  </ul>
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color:rgba(255,255,255,.7);">
+      🚪 Logout
+    </a>
+  </div>
+</aside>
+
+<!-- ══════════════════════════════════════════════════════ MAIN -->
+<div class="main-content">
+
+  <!-- HEADER -->
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">Teachers Management</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock">Loading…</div>
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <!-- PAGE BODY -->
+  <main class="page-content">
+
+    <!-- Toolbar -->
+    <div class="toolbar">
+      <div class="search-bar">
+        <span class="search-icon">🔍</span>
+        <input class="form-control" type="search" id="searchInput"
+               placeholder="Search by name, subject or employee ID…" />
+      </div>
+
+      <select class="form-control" id="classFilter" style="width:auto;min-width:140px;">
+        <option value="">All Classes</option>
+        <option value="KG1">KG1</option>
+        <option value="KG2">KG2</option>
+        <option value="1">Class 1</option>
+        <option value="2">Class 2</option>
+        <option value="3">Class 3</option>
+        <option value="4">Class 4</option>
+        <option value="5">Class 5</option>
+        <option value="6">Class 6</option>
+        <option value="7">Class 7</option>
+        <option value="8">Class 8</option>
+        <option value="9">Class 9</option>
+        <option value="10">Class 10</option>
+        <option value="11">Class 11</option>
+        <option value="12">Class 12</option>
+      </select>
+
+      <button class="btn btn-accent" id="openAddModal">👨‍🏫 Add Teacher</button>
+    </div>
+
+    <!-- Table card -->
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-header">
+        <span class="card-title">👨‍🏫 All Teachers</span>
+        <span id="teacherCount" style="font-size:13px;color:var(--text-muted);">Loading…</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div class="table-wrapper">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th style="width:50px;">Photo</th>
+                <th>Name</th>
+                <th>Subject</th>
+                <th>Classes</th>
+                <th>Phone</th>
+                <th>Email</th>
+                <th style="width:90px;">Status</th>
+                <th style="width:120px;">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="teacherTableBody">
+              <tr><td colspan="8">
+                <div class="empty-state">
+                  <div class="skeleton" style="width:60%;height:14px;margin:0 auto 8px;"></div>
+                  <div class="skeleton" style="width:40%;height:12px;margin:0 auto;"></div>
+                </div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div><!-- /main-content -->
+
+<!-- ══════════════════════════════════════════════════════ ADD/EDIT MODAL -->
+<div class="modal-overlay" id="teacherModal">
+  <div class="modal-box" style="max-width:620px;">
+    <div class="modal-header">
+      <h3 class="card-title" id="modalTitle">Add New Teacher</h3>
+      <button class="modal-close" id="closeTeacherModal">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Photo upload -->
+      <div class="photo-upload-wrap">
+        <div class="photo-upload-ring" id="photoRing" title="Click to upload photo">
+          <div class="upload-hint" id="uploadHint">
+            <span>📷</span>Upload Photo
+          </div>
+          <img id="photoPreview" src="" alt="" style="display:none;" />
+        </div>
+        <input type="file" id="photoInput" accept="image/*" style="display:none;" />
+        <div id="photoProgress"></div>
+      </div>
+
+      <!-- Row 2: Name + Employee ID -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="tName">Full Name *</label>
+          <input type="text" id="tName" class="form-control" placeholder="e.g. Priya Sharma" />
+        </div>
+        <div class="form-group">
+          <label for="tEmpId">Employee ID *</label>
+          <input type="text" id="tEmpId" class="form-control" placeholder="TCH-001" />
+        </div>
+      </div>
+
+      <!-- Row 3: Email + Password (password hidden in edit) -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="tEmail">Email * <small style="color:var(--text-muted);">(login email)</small></label>
+          <input type="email" id="tEmail" class="form-control" placeholder="teacher@school.edu" />
+        </div>
+        <div class="form-group" id="passwordGroup">
+          <label for="tPassword">Temporary Password *</label>
+          <div class="pw-field-wrap">
+            <input type="password" id="tPassword" class="form-control"
+                   placeholder="Min. 6 characters" autocomplete="new-password" />
+            <button class="pw-eye-btn" type="button" id="pwEyeBtn">👁</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Row 4: Phone + WhatsApp -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="tPhone">Phone Number</label>
+          <input type="tel" id="tPhone" class="form-control" placeholder="+91 XXXXX XXXXX" />
+        </div>
+        <div class="form-group">
+          <label for="tWhatsapp">WhatsApp Number</label>
+          <input type="tel" id="tWhatsapp" class="form-control" placeholder="+91 XXXXX XXXXX" />
+        </div>
+      </div>
+
+      <!-- Row 5: Subject + Qualification -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="tSubject">Subject Specialization</label>
+          <input type="text" id="tSubject" class="form-control" placeholder="e.g. Mathematics" />
+        </div>
+        <div class="form-group">
+          <label for="tQualification">Qualification</label>
+          <input type="text" id="tQualification" class="form-control" placeholder="e.g. B.Ed, M.Sc" />
+        </div>
+      </div>
+
+      <!-- Row 6: Classes Assigned -->
+      <div class="form-group">
+        <label>Classes Assigned</label>
+        <div class="class-check-grid" id="classCheckGrid">
+          <!-- generated by JS -->
+        </div>
+      </div>
+
+      <!-- Row 7: Joining Date + Salary -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="tJoining">Date of Joining</label>
+          <input type="date" id="tJoining" class="form-control" />
+        </div>
+        <div class="form-group">
+          <label for="tSalary">Monthly Salary (₹)</label>
+          <input type="number" id="tSalary" class="form-control" placeholder="e.g. 35000" min="0" />
+        </div>
+      </div>
+
+      <!-- Row 8: Address -->
+      <div class="form-group">
+        <label for="tAddress">Address</label>
+        <textarea id="tAddress" class="form-control" rows="2"
+                  placeholder="Residential address…" style="resize:vertical;"></textarea>
+      </div>
+
+      <!-- Row 9: Status + Gender -->
+      <div class="form-row">
+        <div class="form-group">
+          <label for="tStatus">Status</label>
+          <select id="tStatus" class="form-control">
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="tGender">Gender</label>
+          <select id="tGender" class="form-control">
+            <option value="">Select…</option>
+            <option value="Male">Male</option>
+            <option value="Female">Female</option>
+            <option value="Other">Other</option>
+          </select>
+        </div>
+      </div>
+
+    </div><!-- /modal-body -->
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="cancelTeacherModal">Cancel</button>
+      <button class="btn btn-primary" id="saveTeacherBtn">Save Teacher</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════ VIEW MODAL -->
+<div class="modal-overlay" id="viewModal">
+  <div class="modal-box" style="max-width:620px;">
+    <div class="modal-header">
+      <h3 class="card-title">👤 Teacher Profile</h3>
+      <button class="modal-close" id="closeViewModal">✕</button>
+    </div>
+    <div id="viewModalBody"><!-- populated by JS --></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="closeViewBtn">Close</button>
+      <button class="btn btn-primary" id="viewEditBtn">✏️ Edit</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- ══════════════════════════════════════════════════════ SCRIPT -->
+<script>
+// ── Boot ────────────────────────────────────────────────────────
+checkAdminAuth().then(user => initPage(user));
+
+// ── Clock ───────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('liveClock');
+  const DAYS = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function tick() {
+    const d = new Date();
+    let h = d.getHours(), ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const pad = n => String(n).padStart(2,'0');
+    el.textContent = `${DAYS[d.getDay()]}, ${pad(d.getDate())} ${MONTHS[d.getMonth()]} ${d.getFullYear()} | ${pad(h)}:${pad(d.getMinutes())}:${pad(d.getSeconds())} ${ampm}`;
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+// ── Hamburger ───────────────────────────────────────────────────
+document.getElementById('hamburger').addEventListener('click', () =>
+  document.getElementById('sidebar').classList.toggle('mobile-open'));
+
+// ── Helpers ─────────────────────────────────────────────────────
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const getInitials = n => (n||'?').trim().split(/\s+/).map(w=>w[0].toUpperCase()).slice(0,2).join('');
+
+const CLASS_OPTIONS = ['KG1','KG2','1','2','3','4','5','6','7','8','9','10','11','12'];
+
+function buildClassCheckboxes(selectedClasses = []) {
+  const grid = document.getElementById('classCheckGrid');
+  grid.innerHTML = CLASS_OPTIONS.map(c => `
+    <label class="class-check-label">
+      <input type="checkbox" name="classCheck" value="${c}"
+             ${selectedClasses.includes(c) ? 'checked' : ''} />
+      <span>${c === 'KG1' || c === 'KG2' ? c : 'Cls '+c}</span>
+    </label>`).join('');
+}
+
+function getCheckedClasses() {
+  return [...document.querySelectorAll('#classCheckGrid input:checked')].map(cb => cb.value);
+}
+
+// Auto-suggest next employee ID
+async function suggestEmpId() {
+  try {
+    const snap = await db.collection('teachers').orderBy('employeeId','desc').limit(20).get();
+    let max = 0;
+    snap.forEach(d => {
+      const m = String(d.data().employeeId||'').match(/\d+$/);
+      if (m) max = Math.max(max, parseInt(m[0]));
+    });
+    document.getElementById('tEmpId').value = `TCH-${String(max+1).padStart(3,'0')}`;
+  } catch { /* silent */ }
+}
+
+// ── State ────────────────────────────────────────────────────────
+let allTeachers   = [];     // full snapshot cache
+let editMode      = false;
+let editDocId     = null;
+let viewingId     = null;
+let uploadedPhotoUrl = '';
+let photoFile     = null;
+
+// ── Init page ───────────────────────────────────────────────────
+function initPage(user) {
+  document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+  document.getElementById('headerAvatar').textContent   = getInitials(user.name || user.email);
+
+  db.collection('settings').doc('schoolConfig').get().then(doc => {
+    if (doc.exists && doc.data().schoolName) {
+      document.getElementById('schoolName').textContent = doc.data().schoolName;
+      document.title = `Teachers — ${doc.data().schoolName}`;
+    }
+  }).catch(()=>{});
+
+  // Live teachers snapshot
+  db.collection('teachers').orderBy('name').onSnapshot(snap => {
+    allTeachers = [];
+    snap.forEach(d => allTeachers.push({ id: d.id, ...d.data() }));
+    renderTable();
+  }, () => {
+    document.getElementById('teacherTableBody').innerHTML =
+      `<tr><td colspan="8"><div class="empty-state">⚠️ Could not load teachers.</div></td></tr>`;
+  });
+
+  // Search + filter listeners
+  document.getElementById('searchInput').addEventListener('input', renderTable);
+  document.getElementById('classFilter').addEventListener('change', renderTable);
+}
+
+// ── Render table ─────────────────────────────────────────────────
+function renderTable() {
+  const q    = document.getElementById('searchInput').value.trim().toLowerCase();
+  const cls  = document.getElementById('classFilter').value;
+
+  let list = allTeachers.filter(t => {
+    const matchSearch = !q ||
+      (t.name||'').toLowerCase().includes(q) ||
+      (t.subject||'').toLowerCase().includes(q) ||
+      (t.employeeId||'').toLowerCase().includes(q);
+    const matchClass = !cls ||
+      (Array.isArray(t.classes) && t.classes.includes(cls));
+    return matchSearch && matchClass;
+  });
+
+  const count = document.getElementById('teacherCount');
+  count.textContent = `${list.length} teacher${list.length!==1?'s':''}`;
+
+  const tbody = document.getElementById('teacherTableBody');
+  if (list.length === 0) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state">
+      <div class="empty-icon">👨‍🏫</div>
+      ${allTeachers.length === 0 ? 'No teachers added yet. Click "Add Teacher" to begin.' : 'No teachers match your search.'}
+    </div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = list.map((t,i) => {
+    const photoCell = t.photoUrl
+      ? `<img class="teacher-avatar" src="${esc(t.photoUrl)}" alt="${esc(t.name)}" loading="lazy" />`
+      : `<div class="avatar-initials">${getInitials(t.name)}</div>`;
+
+    const classBadges = Array.isArray(t.classes) && t.classes.length
+      ? `<div class="classes-cell">${t.classes.map(c=>`<span class="badge badge-primary">${esc(c)}</span>`).join('')}</div>`
+      : '<span style="color:var(--text-muted);font-size:12px;">—</span>';
+
+    const statusBadge = t.status === 'active'
+      ? `<span class="badge badge-success">Active</span>`
+      : `<span class="badge badge-danger">Inactive</span>`;
+
+    return `<tr style="animation-delay:${i*0.03}s">
+      <td>${photoCell}</td>
+      <td>
+        <div class="teacher-name">${esc(t.name||'—')}</div>
+        <div class="teacher-empid">${esc(t.employeeId||'')}</div>
+      </td>
+      <td>${esc(t.subject||'—')}</td>
+      <td>${classBadges}</td>
+      <td style="font-size:13px;">${esc(t.phone||'—')}</td>
+      <td style="font-size:13px;">${esc(t.email||'—')}</td>
+      <td>${statusBadge}</td>
+      <td>
+        <div style="display:flex;gap:4px;">
+          <button class="btn btn-sm btn-outline btn-icon" title="View"
+                  onclick="openViewModal('${t.id}')">👁</button>
+          <button class="btn btn-sm btn-outline btn-icon" title="Edit"
+                  onclick="openEditModal('${t.id}')">✏️</button>
+          <button class="btn btn-sm btn-outline btn-icon" title="Deactivate"
+                  style="color:var(--danger);"
+                  onclick="deactivateTeacher('${t.id}','${esc(t.name)}')">🗑</button>
+        </div>
+      </td>
+    </tr>`;
+  }).join('');
+}
+
+// ══════════════════════════════════════════════════════════
+//  ADD / EDIT MODAL
+// ══════════════════════════════════════════════════════════
+const teacherModal = document.getElementById('teacherModal');
+
+function openAddModal() {
+  editMode = false; editDocId = null;
+  uploadedPhotoUrl = ''; photoFile = null;
+  resetForm();
+  document.getElementById('modalTitle').textContent = 'Add New Teacher';
+  document.getElementById('passwordGroup').style.display = '';
+  document.getElementById('tEmail').readOnly = false;
+  document.getElementById('saveTeacherBtn').textContent = 'Save Teacher';
+  buildClassCheckboxes([]);
+  suggestEmpId();
+  teacherModal.classList.add('active');
+}
+
+function openEditModal(id) {
+  const t = allTeachers.find(x => x.id === id);
+  if (!t) return;
+  editMode = true; editDocId = id;
+  uploadedPhotoUrl = t.photoUrl || ''; photoFile = null;
+
+  document.getElementById('modalTitle').textContent = 'Edit Teacher';
+  document.getElementById('passwordGroup').style.display = 'none';
+  document.getElementById('tEmail').readOnly = true;
+  document.getElementById('saveTeacherBtn').textContent = 'Update Teacher';
+
+  // Fill fields
+  document.getElementById('tName').value          = t.name         || '';
+  document.getElementById('tEmpId').value         = t.employeeId   || '';
+  document.getElementById('tEmail').value         = t.email        || '';
+  document.getElementById('tPhone').value         = t.phone        || '';
+  document.getElementById('tWhatsapp').value      = t.whatsapp     || '';
+  document.getElementById('tSubject').value       = t.subject      || '';
+  document.getElementById('tQualification').value = t.qualification|| '';
+  document.getElementById('tJoining').value       = t.joiningDate  || '';
+  document.getElementById('tSalary').value        = t.salary       || '';
+  document.getElementById('tAddress').value       = t.address      || '';
+  document.getElementById('tStatus').value        = t.status       || 'active';
+  document.getElementById('tGender').value        = t.gender       || '';
+
+  // Photo preview
+  if (t.photoUrl) {
+    document.getElementById('photoPreview').src     = t.photoUrl;
+    document.getElementById('photoPreview').style.display = '';
+    document.getElementById('uploadHint').style.display   = 'none';
+  } else {
+    document.getElementById('photoPreview').style.display = 'none';
+    document.getElementById('uploadHint').style.display   = 'flex';
+  }
+
+  buildClassCheckboxes(Array.isArray(t.classes) ? t.classes : []);
+  teacherModal.classList.add('active');
+}
+
+function closeTeacherModal() {
+  teacherModal.classList.remove('active');
+  resetForm();
+}
+
+function resetForm() {
+  ['tName','tEmpId','tEmail','tPassword','tPhone','tWhatsapp',
+   'tSubject','tQualification','tJoining','tSalary','tAddress'].forEach(id => {
+    document.getElementById(id).value = '';
+  });
+  document.getElementById('tStatus').value = 'active';
+  document.getElementById('tGender').value = '';
+  document.getElementById('photoPreview').style.display = 'none';
+  document.getElementById('uploadHint').style.display   = 'flex';
+  document.getElementById('photoProgress').textContent  = '';
+  uploadedPhotoUrl = ''; photoFile = null;
+}
+
+document.getElementById('openAddModal').addEventListener('click', openAddModal);
+document.getElementById('closeTeacherModal').addEventListener('click', closeTeacherModal);
+document.getElementById('cancelTeacherModal').addEventListener('click', closeTeacherModal);
+teacherModal.addEventListener('click', e => { if (e.target === teacherModal) closeTeacherModal(); });
+
+// Photo upload click
+document.getElementById('photoRing').addEventListener('click', () =>
+  document.getElementById('photoInput').click());
+
+document.getElementById('photoInput').addEventListener('change', function () {
+  const file = this.files[0];
+  if (!file) return;
+  photoFile = file;
+  const reader = new FileReader();
+  reader.onload = e => {
+    document.getElementById('photoPreview').src = e.target.result;
+    document.getElementById('photoPreview').style.display = '';
+    document.getElementById('uploadHint').style.display   = 'none';
+  };
+  reader.readAsDataURL(file);
+  document.getElementById('photoProgress').textContent = '📎 Photo selected (will upload on save)';
+});
+
+// Password visibility toggle
+document.getElementById('pwEyeBtn').addEventListener('click', function() {
+  const inp = document.getElementById('tPassword');
+  const visible = inp.type === 'text';
+  inp.type = visible ? 'password' : 'text';
+  this.textContent = visible ? '👁' : '🙈';
+});
+
+// ── Save teacher ─────────────────────────────────────────────────
+document.getElementById('saveTeacherBtn').addEventListener('click', async function () {
+  const name          = document.getElementById('tName').value.trim();
+  const employeeId    = document.getElementById('tEmpId').value.trim();
+  const email         = document.getElementById('tEmail').value.trim();
+  const password      = document.getElementById('tPassword').value.trim();
+  const phone         = document.getElementById('tPhone').value.trim();
+  const whatsapp      = document.getElementById('tWhatsapp').value.trim();
+  const subject       = document.getElementById('tSubject').value.trim();
+  const qualification = document.getElementById('tQualification').value.trim();
+  const joiningDate   = document.getElementById('tJoining').value;
+  const salary        = document.getElementById('tSalary').value;
+  const address       = document.getElementById('tAddress').value.trim();
+  const status        = document.getElementById('tStatus').value;
+  const gender        = document.getElementById('tGender').value;
+  const classes       = getCheckedClasses();
+
+  // Validation
+  if (!name)       { showToast('Full name is required.', 'error'); return; }
+  if (!employeeId) { showToast('Employee ID is required.', 'error'); return; }
+  if (!email)      { showToast('Email is required.', 'error'); return; }
+  if (!editMode && !password) { showToast('Temporary password is required.', 'error'); return; }
+  if (!editMode && password.length < 6) { showToast('Password must be at least 6 characters.', 'error'); return; }
+
+  this.disabled = true;
+  this.textContent = editMode ? 'Updating…' : 'Saving…';
+
+  try {
+    // Upload photo if new file selected
+    let photoUrl = uploadedPhotoUrl;
+    if (photoFile) {
+      document.getElementById('photoProgress').textContent = '⏳ Uploading photo…';
+      photoUrl = await uploadToCloudinary(photoFile, 'teachers');
+      document.getElementById('photoProgress').textContent = '✅ Photo uploaded!';
+    }
+
+    const teacherData = {
+      name, employeeId, email, phone, whatsapp, subject,
+      qualification, joiningDate, salary: salary ? Number(salary) : null,
+      address, status, gender, classes, photoUrl,
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (!editMode) {
+      // CREATE: Firebase Auth account first
+      const credential = await firebase.auth().createUserWithEmailAndPassword(email, password);
+      const uid = credential.user.uid;
+      teacherData.uid       = uid;
+      teacherData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+
+      await db.collection('teachers').doc(uid).set(teacherData);
+      await db.collection('users').doc(uid).set({
+        uid, email, name, role: 'teacher', status: 'active',
+        teacherId: employeeId,
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+      await logActivity('Teacher added: ' + name);
+      showToast('Teacher added successfully!', 'success');
+    } else {
+      // EDIT: update only (no auth changes)
+      delete teacherData.email; // email unchanged
+      await db.collection('teachers').doc(editDocId).update(teacherData);
+      await logActivity('Teacher updated: ' + name);
+      showToast('Teacher updated successfully!', 'success');
+    }
+
+    closeTeacherModal();
+  } catch (err) {
+    console.error(err);
+    const msgs = {
+      'auth/email-already-in-use': 'This email is already registered.',
+      'auth/invalid-email':        'Please enter a valid email address.',
+      'auth/weak-password':        'Password is too weak (min 6 characters).',
+    };
+    showToast(msgs[err.code] || err.message || 'Failed to save teacher.', 'error');
+  } finally {
+    this.disabled = false;
+    this.textContent = editMode ? 'Update Teacher' : 'Save Teacher';
+  }
+});
+
+// ── Deactivate teacher ───────────────────────────────────────────
+window.deactivateTeacher = async function (id, name) {
+  if (!confirm(`Deactivate ${name}? They will lose portal access.`)) return;
+  try {
+    await db.collection('teachers').doc(id).update({ status: 'inactive' });
+    await db.collection('users').doc(id).update({ status: 'inactive' });
+    await logActivity('Teacher deactivated: ' + name);
+    showToast('Teacher deactivated.', 'warning');
+  } catch (err) {
+    showToast('Could not deactivate teacher.', 'error');
+  }
+};
+
+// ══════════════════════════════════════════════════════════
+//  VIEW MODAL
+// ══════════════════════════════════════════════════════════
+const viewModal = document.getElementById('viewModal');
+
+window.openViewModal = async function (id) {
+  viewingId = id;
+  const t = allTeachers.find(x => x.id === id);
+  if (!t) return;
+
+  const photoHtml = t.photoUrl
+    ? `<img src="${esc(t.photoUrl)}" alt="${esc(t.name)}" class="avatar-lg" style="border:3px solid var(--primary);width:100px;height:100px;border-radius:50%;object-fit:cover;" />`
+    : `<div class="avatar-lg" style="width:100px;height:100px;">${getInitials(t.name)}</div>`;
+
+  const statusBadge = t.status === 'active'
+    ? `<span class="badge badge-success">Active</span>`
+    : `<span class="badge badge-danger">Inactive</span>`;
+
+  const classBadges = Array.isArray(t.classes) && t.classes.length
+    ? t.classes.map(c=>`<span class="badge badge-primary">${esc(c)}</span>`).join(' ')
+    : '—';
+
+  const field = (label, value) => `
+    <div class="profile-field">
+      <label>${label}</label>
+      <span>${esc(value||'—')}</span>
+    </div>`;
+
+  document.getElementById('viewModalBody').innerHTML = `
+    <div class="profile-hero">
+      ${photoHtml}
+      <div class="profile-info">
+        <div class="profile-name">${esc(t.name||'—')}</div>
+        <div class="profile-meta">${esc(t.employeeId||'')} · ${esc(t.subject||'No subject')}</div>
+        <div class="profile-badges">
+          ${statusBadge}
+          ${t.gender ? `<span class="badge badge-info">${esc(t.gender)}</span>` : ''}
+          ${t.qualification ? `<span class="badge badge-primary">${esc(t.qualification)}</span>` : ''}
+        </div>
+      </div>
+    </div>
+    <div class="profile-grid">
+      ${field('Email',         t.email)}
+      ${field('Phone',         t.phone)}
+      ${field('WhatsApp',      t.whatsapp)}
+      ${field('Employee ID',   t.employeeId)}
+      ${field('Date of Joining', t.joiningDate)}
+      ${field('Monthly Salary', t.salary ? '₹'+Number(t.salary).toLocaleString('en-IN') : null)}
+      ${field('Qualification', t.qualification)}
+      ${field('Gender',        t.gender)}
+      <div class="profile-field" style="grid-column:1/-1;">
+        <label>Classes Assigned</label>
+        <div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:2px;">${classBadges}</div>
+      </div>
+      ${t.address ? `<div class="profile-field" style="grid-column:1/-1;">${field('Address', t.address)}</div>` : ''}
+    </div>
+    <div class="timetable-section" id="viewTimetable">
+      <h4>📅 Assigned Timetable</h4>
+      <div id="ttContent"><em style="color:var(--text-muted);font-size:13px;">Loading timetable…</em></div>
+    </div>
+  `;
+
+  viewModal.classList.add('active');
+  loadTimetable(id);
+};
+
+async function loadTimetable(teacherId) {
+  try {
+    const snap = await db.collection('timetable').where('teacherId','==',teacherId).get();
+    const ttContent = document.getElementById('ttContent');
+    if (!ttContent) return;
+
+    if (snap.empty) {
+      ttContent.innerHTML = '<div class="tt-empty">No timetable assigned yet.</div>';
+      return;
+    }
+
+    // Group by day
+    const dayOrder = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+    const byDay = {};
+    snap.forEach(d => {
+      const data = d.data();
+      const day  = data.day || 'Unknown';
+      if (!byDay[day]) byDay[day] = [];
+      byDay[day].push(data);
+    });
+
+    const days = [...new Set([...dayOrder, ...Object.keys(byDay)])].filter(d => byDay[d]);
+    ttContent.innerHTML = days.map(day => {
+      const slots = byDay[day].sort((a,b) => (a.period||0) - (b.period||0));
+      return `<div class="tt-day">
+        <div class="tt-day-name">${esc(day)}</div>
+        <div class="tt-slots">
+          ${slots.map(s =>
+            `<div class="tt-slot">${esc(s.period ? 'P'+s.period+': ' : '')}${esc(s.subject||s.className||'Class')}</div>`
+          ).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  } catch {
+    const ttContent = document.getElementById('ttContent');
+    if (ttContent) ttContent.innerHTML = '<div class="tt-empty">Could not load timetable.</div>';
+  }
+}
+
+function closeViewModal() { viewModal.classList.remove('active'); viewingId = null; }
+document.getElementById('closeViewModal').addEventListener('click', closeViewModal);
+document.getElementById('closeViewBtn').addEventListener('click', closeViewModal);
+viewModal.addEventListener('click', e => { if (e.target === viewModal) closeViewModal(); });
+
+document.getElementById('viewEditBtn').addEventListener('click', () => {
+  closeViewModal();
+  if (viewingId) openEditModal(viewingId);
+});
+</script>
+</body>
+</html>

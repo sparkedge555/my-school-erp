@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Timetable — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css">
+
+  <style>
+    .page-content { overflow-y: auto; }
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    /* ── Clock & header ─────────────────────────────────── */
+    #liveClock {
+      font-size: 12.5px; color: var(--text-muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; cursor: pointer; padding: 5px 9px;
+      font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Top controls row ─────────────────────────────────── */
+    .tt-controls {
+      display: flex; align-items: center; gap: 10px;
+      flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .tt-controls select { min-width: 130px; }
+    .tt-controls .spacer { flex: 1; }
+
+    /* ── Timetable grid ───────────────────────────────────── */
+    .tt-grid-wrapper { overflow-x: auto; }
+    table.tt-grid {
+      width: 100%; border-collapse: collapse; min-width: 1100px;
+    }
+    .tt-grid th {
+      background: var(--primary); color: #fff;
+      padding: 10px 8px; font-size: 12.5px; text-align: center;
+      white-space: nowrap; position: sticky; top: 0; z-index: 2;
+    }
+    .tt-grid th.day-col, .tt-grid td.day-col {
+      position: sticky; left: 0; z-index: 3;
+      background: var(--primary); color: #fff;
+      text-align: left; padding-left: 14px;
+    }
+    .tt-grid td.day-col { font-weight: 600; font-size: 13px; }
+    .tt-grid td {
+      border: 1px solid var(--border); padding: 0;
+      text-align: center; vertical-align: middle;
+      height: 64px; min-width: 110px;
+    }
+    .tt-grid tbody tr:nth-child(even) td:not(.day-col) { background: #fafbfc; }
+
+    .tt-special-col {
+      background: #e9ecef !important; color: var(--text-muted);
+      font-size: 12px; font-weight: 600; writing-mode: horizontal-tb;
+    }
+    td.tt-special-cell {
+      background: #e9ecef !important; color: var(--text-muted);
+      font-size: 12px; font-weight: 600;
+    }
+
+    .tt-cell-btn {
+      width: 100%; height: 100%; min-height: 64px;
+      border: none; background: transparent; cursor: pointer;
+      display: flex; flex-direction: column; align-items: center;
+      justify-content: center; gap: 2px; padding: 6px 4px;
+      font-family: inherit; transition: filter .15s;
+    }
+    .tt-cell-btn:hover { filter: brightness(0.96); }
+    .tt-cell-empty {
+      color: var(--text-muted); font-size: 12.5px;
+      border: 1px dashed var(--border); border-radius: 6px;
+      width: calc(100% - 10px); height: calc(100% - 10px);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .tt-cell-subject { font-weight: 700; font-size: 13px; color: var(--text); }
+    .tt-cell-teacher { font-size: 11px; color: var(--text-muted); margin-top: 1px; }
+
+    .tt-loading-row td { padding: 30px; color: var(--text-muted); }
+
+    @keyframes shimmer {
+      0% { background-position: -600px 0; } 100% { background-position: 600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg,#e8edf3 25%,#f5f7fa 50%,#e8edf3 75%);
+      background-size: 1200px 100%; animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: inline-block;
+    }
+
+    .empty-state { text-align: center; padding: 40px 16px; color: var(--text-muted); }
+    .empty-state .ei { font-size: 36px; margin-bottom: 10px; }
+
+    /* ── Modal extras ─────────────────────────────────────── */
+    .modal-close {
+      background: none; border: none; font-size: 20px; cursor: pointer;
+      color: var(--text-muted); line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+
+    .conflict-warning {
+      background: #fff3cd; border: 1px solid #ffe69c; color: #856404;
+      border-radius: 6px; padding: 10px 14px; font-size: 13.5px;
+      margin-bottom: 14px; display: none; line-height: 1.45;
+    }
+    .conflict-warning.show { display: block; }
+
+    /* ── Print styles ─────────────────────────────────────── */
+    #printHeader { display: none; }
+    @media print {
+      .sidebar, .top-header, .tt-controls, .hamburger { display: none !important; }
+      .main-content { margin-left: 0 !important; }
+      .page-content { padding: 0 !important; margin-top: 0 !important; }
+      body { background: #fff !important; }
+      #printHeader { display: block !important; text-align: center; margin-bottom: 18px; }
+      #printHeader h2 { font-size: 20px; margin-bottom: 4px; }
+      #printHeader p { font-size: 13px; color: #444; }
+      .card { box-shadow: none !important; }
+      table.tt-grid { min-width: 0; width: 100%; font-size: 11px; }
+      .tt-grid th, .tt-grid td.day-col { background: #1e3a5f !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+      .tt-cell-btn { cursor: default; min-height: 40px; }
+      .tt-cell-empty { border: none; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- ═══════════════════════════════════════════════ SIDEBAR -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html"     data-page="dashboard">📊 Dashboard</a></li>
+    <li><a href="announcements.html" data-page="announcements">📢 Announcements</a></li>
+
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html"  data-page="teachers">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html"  data-page="students">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html" data-page="timetable" class="active">📅 Timetable</a></li>
+
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html"      data-page="fees">💰 Fee Management</a></li>
+
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html"     data-page="marks">📝 Marks &amp; Results</a></li>
+
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html"      data-page="docs">📄 Certificates</a></li>
+
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html"      data-page="team">👥 Team Members</a></li>
+    <li><a href="settings.html"  data-page="settings">⚙️ Settings</a></li>
+  </ul>
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color:rgba(255,255,255,.7);">🚪 Logout</a>
+  </div>
+</aside>
+
+<!-- ═══════════════════════════════════════════════ MAIN -->
+<div class="main-content">
+
+  <!-- HEADER -->
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">Timetable</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock">Loading…</div>
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <!-- PAGE BODY -->
+  <main class="page-content">
+
+    <!-- Print-only header -->
+    <div id="printHeader">
+      <h2 id="printSchoolName">My School ERP</h2>
+      <p id="printClassInfo">Class — Section</p>
+    </div>
+
+    <!-- Top controls -->
+    <div class="tt-controls">
+      <select class="form-control" id="ttClass">
+        <option value="">Select Class…</option>
+        <option value="KG1">KG1</option>
+        <option value="KG2">KG2</option>
+        <option value="1">Class 1</option>
+        <option value="2">Class 2</option>
+        <option value="3">Class 3</option>
+        <option value="4">Class 4</option>
+        <option value="5">Class 5</option>
+        <option value="6">Class 6</option>
+        <option value="7">Class 7</option>
+        <option value="8">Class 8</option>
+        <option value="9">Class 9</option>
+        <option value="10">Class 10</option>
+        <option value="11">Class 11</option>
+        <option value="12">Class 12</option>
+      </select>
+      <select class="form-control" id="ttSection">
+        <option value="">Select Section…</option>
+        <option value="A">Section A</option>
+        <option value="B">Section B</option>
+        <option value="C">Section C</option>
+        <option value="D">Section D</option>
+      </select>
+      <button class="btn btn-primary" id="loadBtn">📅 Load Timetable</button>
+      <span class="spacer"></span>
+      <button class="btn btn-outline" id="printBtn" disabled>🖨 Print</button>
+      <button class="btn btn-outline" id="clearAllBtn" style="color:var(--danger);" disabled>🗑 Clear All</button>
+    </div>
+
+    <!-- Grid card -->
+    <div class="card" style="margin-bottom:24px;">
+      <div class="card-header">
+        <span class="card-title">📅 Weekly Timetable</span>
+        <span id="ttStatus" style="font-size:13px;color:var(--text-muted);">Select a class &amp; section, then click "Load Timetable"</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div class="tt-grid-wrapper" id="ttGridWrapper">
+          <div class="empty-state">
+            <div class="ei">📅</div>
+            No timetable loaded yet. Choose a class and section above.
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div><!-- /main-content -->
+
+<!-- ═══════════════════════════════════════════════ EDIT PERIOD MODAL -->
+<div class="modal-overlay" id="periodModal">
+  <div class="modal-box" style="max-width:480px;">
+    <div class="modal-header">
+      <h3 class="card-title" id="periodModalTitle">Edit Period</h3>
+      <button class="modal-close" id="closePeriodModal">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <div class="conflict-warning" id="conflictWarning"></div>
+
+      <div class="form-group">
+        <label for="periodSubject">Subject</label>
+        <select id="periodSubject" class="form-control">
+          <option value="">Select Subject…</option>
+        </select>
+      </div>
+
+      <div class="form-group">
+        <label for="periodTeacher">Teacher</label>
+        <select id="periodTeacher" class="form-control">
+          <option value="">Select Teacher…</option>
+        </select>
+      </div>
+
+    </div>
+    <div class="modal-footer" style="justify-content:space-between;">
+      <button class="btn btn-outline" id="clearPeriodBtn" style="color:var(--danger);">🗑 Clear Period</button>
+      <div style="display:flex;gap:12px;">
+        <button class="btn btn-outline" id="cancelPeriodModal">Cancel</button>
+        <button class="btn btn-primary" id="savePeriodBtn">Save</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- ═══════════════════════════════════════════════ SCRIPT -->
+<script>
+// ── Boot ─────────────────────────────────────────────────────
+checkAdminAuth().then(user => initPage(user));
+
+// ── Clock ─────────────────────────────────────────────────────
+(function () {
+  const el = document.getElementById('liveClock');
+  const D = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function tick() {
+    const d = new Date(); let h = d.getHours(); const ap = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const p = n => String(n).padStart(2,'0');
+    el.textContent = `${D[d.getDay()]}, ${p(d.getDate())} ${M[d.getMonth()]} ${d.getFullYear()} | ${p(h)}:${p(d.getMinutes())}:${p(d.getSeconds())} ${ap}`;
+  }
+  tick(); setInterval(tick, 1000);
+})();
+
+// ── Hamburger ─────────────────────────────────────────────────
+document.getElementById('hamburger').addEventListener('click', () =>
+  document.getElementById('sidebar').classList.toggle('mobile-open'));
+
+// ── Utils ─────────────────────────────────────────────────────
+const esc = s => String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+const gi  = n => (n||'?').trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0,2).join('');
+
+// ── Constants ─────────────────────────────────────────────────
+const DAYS = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+// Column layout: each entry is either a real period or a special (non-editable) column
+const COLUMNS = [
+  { type: 'period',  period: 1, label: 'Period 1' },
+  { type: 'period',  period: 2, label: 'Period 2' },
+  { type: 'period',  period: 3, label: 'Period 3' },
+  { type: 'special', label: 'BREAK',  icon: '☕', text: 'Break' },
+  { type: 'period',  period: 4, label: 'Period 4' },
+  { type: 'period',  period: 5, label: 'Period 5' },
+  { type: 'special', label: 'LUNCH',  icon: '🍽', text: 'Lunch' },
+  { type: 'period',  period: 6, label: 'Period 6' },
+  { type: 'period',  period: 7, label: 'Period 7' },
+  { type: 'period',  period: 8, label: 'Period 8' },
+];
+
+const DEFAULT_SUBJECTS = [
+  'Mathematics', 'Science', 'English', 'Hindi', 'Social Science',
+  'Computer', 'Physical Education', 'Art', 'Music', 'Library', 'Moral Science'
+];
+
+// Soft, auto-assigned tints per subject (cycled if more subjects appear)
+const SUBJECT_COLORS = [
+  '#e3f2fd', '#fce4ec', '#e8f5e9', '#fff3e0', '#f3e5f5',
+  '#e0f2f1', '#fff8e1', '#ede7f6', '#e1f5fe', '#fbe9e7', '#f1f8e9'
+];
+const subjectColorMap = {};
+function colorForSubject(subject) {
+  if (!subject) return '#fff';
+  if (!subjectColorMap[subject]) {
+    const idx = Object.keys(subjectColorMap).length % SUBJECT_COLORS.length;
+    subjectColorMap[subject] = SUBJECT_COLORS[idx];
+  }
+  return subjectColorMap[subject];
+}
+
+// ── State ─────────────────────────────────────────────────────
+let allSubjects   = DEFAULT_SUBJECTS.slice();
+let allTeachers   = [];                 // active teachers cache
+let timetableData = {};                 // key: `${day}|${period}` -> entry doc {id,...}
+let currentClass  = '';
+let currentSection= '';
+let loaded        = false;
+let editingCell    = null;              // { day, period }
+
+// ── Init ──────────────────────────────────────────────────────
+function initPage(user) {
+  document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+  document.getElementById('headerAvatar').textContent   = gi(user.name || user.email);
+
+  db.collection('settings').doc('schoolConfig').get().then(doc => {
+    if (doc.exists && doc.data().schoolName) {
+      document.getElementById('schoolName').textContent = doc.data().schoolName;
+      document.getElementById('printSchoolName').textContent = doc.data().schoolName;
+      document.title = `Timetable — ${doc.data().schoolName}`;
+    }
+  }).catch(()=>{});
+
+  loadSubjects();
+  loadTeachers();
+
+  document.getElementById('loadBtn').addEventListener('click', handleLoadTimetable);
+  document.getElementById('clearAllBtn').addEventListener('click', handleClearAll);
+  document.getElementById('printBtn').addEventListener('click', () => window.print());
+}
+
+// ── Load subjects (from Firestore, fallback to hardcoded list) ──
+async function loadSubjects() {
+  try {
+    const snap = await db.collection('subjects').get();
+    if (!snap.empty) {
+      const names = [];
+      snap.forEach(d => {
+        const data = d.data();
+        names.push(data.name || data.subjectName || d.id);
+      });
+      if (names.length) allSubjects = names;
+    }
+  } catch {
+    // silent — fallback list already in allSubjects
+  }
+  populateSubjectDropdown();
+}
+
+function populateSubjectDropdown() {
+  const sel = document.getElementById('periodSubject');
+  sel.innerHTML = '<option value="">Select Subject…</option>' +
+    allSubjects.map(s => `<option value="${esc(s)}">${esc(s)}</option>`).join('');
+}
+
+// ── Load active teachers ─────────────────────────────────────
+async function loadTeachers() {
+  try {
+    const snap = await db.collection('teachers').where('status','==','active').get();
+    allTeachers = [];
+    snap.forEach(d => allTeachers.push({ id: d.id, ...d.data() }));
+  } catch {
+    allTeachers = [];
+  }
+}
+
+function populateTeacherDropdown(selectedSubject) {
+  const sel = document.getElementById('periodTeacher');
+  let list = allTeachers;
+
+  if (selectedSubject) {
+    const filtered = allTeachers.filter(t => {
+      const spec = t.subject || t.subjectSpecialization || '';
+      return spec && spec.toLowerCase() === selectedSubject.toLowerCase();
+    });
+    if (filtered.length) list = filtered;
+  }
+
+  sel.innerHTML = '<option value="">Select Teacher…</option>' +
+    list.map(t => `<option value="${esc(t.id)}" data-name="${esc(t.name||'')}">${esc(t.name||'Unnamed')}${t.subject ? ' — '+esc(t.subject) : ''}</option>`).join('');
+}
+
+// ── Build the grid skeleton (headers + empty cells) ────────────
+function renderGridSkeleton() {
+  const wrapper = document.getElementById('ttGridWrapper');
+
+  const headCols = COLUMNS.map(c => {
+    if (c.type === 'special') {
+      return `<th class="tt-special-col">${c.icon} ${c.label}</th>`;
+    }
+    return `<th>${c.label}</th>`;
+  }).join('');
+
+  const bodyRows = DAYS.map(day => {
+    const cells = COLUMNS.map(c => {
+      if (c.type === 'special') {
+        return `<td class="tt-special-cell">${c.icon} ${c.text}</td>`;
+      }
+      return `<td data-day="${day}" data-period="${c.period}"></td>`;
+    }).join('');
+    return `<tr><td class="day-col">${day}</td>${cells}</tr>`;
+  }).join('');
+
+  wrapper.innerHTML = `
+    <table class="tt-grid">
+      <thead><tr><th class="day-col">Day</th>${headCols}</tr></thead>
+      <tbody>${bodyRows}</tbody>
+    </table>`;
+}
+
+// ── Render a single cell's content based on timetableData ─────
+function renderCell(day, period) {
+  const td = document.querySelector(`td[data-day="${day}"][data-period="${period}"]`);
+  if (!td) return;
+  const key   = `${day}|${period}`;
+  const entry = timetableData[key];
+
+  if (entry && entry.subject) {
+    const bg = colorForSubject(entry.subject);
+    td.innerHTML = `
+      <button class="tt-cell-btn" style="background:${bg};" onclick="openPeriodModal('${day}',${period})">
+        <span class="tt-cell-subject">${esc(entry.subject)}</span>
+        <span class="tt-cell-teacher">${esc(entry.teacherName || '')}</span>
+      </button>`;
+  } else {
+    td.innerHTML = `
+      <button class="tt-cell-btn" onclick="openPeriodModal('${day}',${period})">
+        <span class="tt-cell-empty">+ Add</span>
+      </button>`;
+  }
+}
+
+function renderAllCells() {
+  DAYS.forEach(day => {
+    COLUMNS.forEach(c => {
+      if (c.type === 'period') renderCell(day, c.period);
+    });
+  });
+}
+
+// ── Load timetable for selected class/section ──────────────────
+async function handleLoadTimetable() {
+  const cls = document.getElementById('ttClass').value;
+  const sec = document.getElementById('ttSection').value;
+
+  if (!cls)  { showToast('Please select a class.', 'error'); return; }
+  if (!sec)  { showToast('Please select a section.', 'error'); return; }
+
+  currentClass   = cls;
+  currentSection = sec;
+  loaded         = false;
+
+  const status = document.getElementById('ttStatus');
+  status.textContent = 'Loading…';
+  renderGridSkeleton();
+  document.getElementById('ttGridWrapper').innerHTML = `
+    <table class="tt-grid"><tbody><tr class="tt-loading-row"><td colspan="11" style="text-align:center;">
+      <div class="skeleton" style="width:200px;height:14px;margin:0 auto;"></div>
+    </td></tr></tbody></table>`;
+
+  try {
+    const snap = await db.collection('timetable')
+      .where('classId', '==', cls)
+      .where('section', '==', sec)
+      .get();
+
+    timetableData = {};
+    snap.forEach(d => {
+      const data = d.data();
+      const key = `${data.day}|${data.period}`;
+      timetableData[key] = { id: d.id, ...data };
+    });
+
+    renderGridSkeleton();
+    renderAllCells();
+
+    const label = (cls === 'KG1' || cls === 'KG2') ? cls : 'Class ' + cls;
+    status.textContent = `Showing ${label} — Section ${sec} (${snap.size} period${snap.size!==1?'s':''} scheduled)`;
+    document.getElementById('printClassInfo').textContent = `${label} — Section ${sec}`;
+
+    document.getElementById('printBtn').disabled    = false;
+    document.getElementById('clearAllBtn').disabled  = false;
+    loaded = true;
+  } catch (err) {
+    console.error(err);
+    document.getElementById('ttGridWrapper').innerHTML =
+      `<div class="empty-state">⚠️ Could not load timetable.</div>`;
+    status.textContent = 'Failed to load.';
+  }
+}
+
+// ── Clear all periods for this class/section ────────────────────
+async function handleClearAll() {
+  if (!loaded || !currentClass || !currentSection) return;
+  const label = (currentClass === 'KG1' || currentClass === 'KG2') ? currentClass : 'Class ' + currentClass;
+  if (!confirm(`Clear the ENTIRE timetable for ${label} — Section ${currentSection}? This cannot be undone.`)) return;
+
+  const btn = document.getElementById('clearAllBtn');
+  btn.disabled = true;
+  btn.textContent = 'Clearing…';
+
+  try {
+    const ids = Object.values(timetableData).map(e => e.id).filter(Boolean);
+    const batch = db.batch();
+    ids.forEach(id => batch.delete(db.collection('timetable').doc(id)));
+    if (ids.length) await batch.commit();
+
+    timetableData = {};
+    renderAllCells();
+    await logActivity(`Cleared timetable for ${label} - Section ${currentSection}`);
+    showToast('Timetable cleared.', 'success');
+    document.getElementById('ttStatus').textContent = `Showing ${label} — Section ${currentSection} (0 periods scheduled)`;
+  } catch (err) {
+    console.error(err);
+    showToast('Could not clear timetable.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🗑 Clear All';
+  }
+}
+
+// ══════════════════════════════════════════════════════════════
+//  EDIT PERIOD MODAL
+// ══════════════════════════════════════════════════════════════
+const periodModal = document.getElementById('periodModal');
+
+window.openPeriodModal = function (day, period) {
+  editingCell = { day, period: Number(period) };
+  const key   = `${day}|${period}`;
+  const entry = timetableData[key];
+
+  const label = (currentClass === 'KG1' || currentClass === 'KG2') ? currentClass : 'Class ' + currentClass;
+  document.getElementById('periodModalTitle').textContent =
+    `${day} — Period ${period} — ${label}${currentSection}`;
+
+  document.getElementById('conflictWarning').classList.remove('show');
+  document.getElementById('conflictWarning').innerHTML = '';
+
+  populateSubjectDropdown();
+  document.getElementById('periodSubject').value = entry ? (entry.subject || '') : '';
+
+  populateTeacherDropdown(entry ? entry.subject : '');
+  document.getElementById('periodTeacher').value = entry ? (entry.teacherId || '') : '';
+
+  document.getElementById('savePeriodBtn').dataset.forceSave = '';
+  document.getElementById('savePeriodBtn').textContent = 'Save';
+
+  periodModal.classList.add('active');
+};
+
+function closePeriodModal() {
+  periodModal.classList.remove('active');
+  editingCell = null;
+}
+
+document.getElementById('closePeriodModal').addEventListener('click', closePeriodModal);
+document.getElementById('cancelPeriodModal').addEventListener('click', closePeriodModal);
+periodModal.addEventListener('click', e => { if (e.target === periodModal) closePeriodModal(); });
+
+// Re-filter teachers when subject changes
+document.getElementById('periodSubject').addEventListener('change', function () {
+  populateTeacherDropdown(this.value);
+  document.getElementById('conflictWarning').classList.remove('show');
+  document.getElementById('savePeriodBtn').dataset.forceSave = '';
+  document.getElementById('savePeriodBtn').textContent = 'Save';
+});
+
+document.getElementById('periodTeacher').addEventListener('change', function () {
+  document.getElementById('conflictWarning').classList.remove('show');
+  document.getElementById('savePeriodBtn').dataset.forceSave = '';
+  document.getElementById('savePeriodBtn').textContent = 'Save';
+});
+
+// ── Clear period ──────────────────────────────────────────────
+document.getElementById('clearPeriodBtn').addEventListener('click', async function () {
+  if (!editingCell) return;
+  const { day, period } = editingCell;
+  const key = `${day}|${period}`;
+  const entry = timetableData[key];
+
+  if (!entry || !entry.id) {
+    // nothing saved yet, just close
+    closePeriodModal();
+    return;
+  }
+
+  if (!confirm('Clear this period?')) return;
+
+  this.disabled = true;
+  try {
+    await db.collection('timetable').doc(entry.id).delete();
+    delete timetableData[key];
+    renderCell(day, period);
+    await logActivity(`Cleared ${day} Period ${period} for Class ${currentClass}${currentSection}`);
+    showToast('Period cleared.', 'success');
+    closePeriodModal();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not clear period.', 'error');
+  } finally {
+    this.disabled = false;
+  }
+});
+
+// ── Save period (with conflict check) ────────────────────────
+document.getElementById('savePeriodBtn').addEventListener('click', async function () {
+  if (!editingCell) return;
+  const { day, period } = editingCell;
+
+  const subject    = document.getElementById('periodSubject').value;
+  const teacherSel = document.getElementById('periodTeacher');
+  const teacherId  = teacherSel.value;
+  const teacherName= teacherSel.selectedOptions[0] ? teacherSel.selectedOptions[0].dataset.name : '';
+
+  if (!subject) { showToast('Please select a subject.', 'error'); return; }
+  if (!teacherId) { showToast('Please select a teacher.', 'error'); return; }
+
+  const forceSave = this.dataset.forceSave === '1';
+
+  this.disabled = true;
+  this.textContent = 'Saving…';
+
+  try {
+    if (!forceSave) {
+      // Conflict check: same teacher, same day, same period, different class/section
+      const snap = await db.collection('timetable')
+        .where('teacherId', '==', teacherId)
+        .where('day', '==', day)
+        .where('period', '==', period)
+        .get();
+
+      let conflict = null;
+      snap.forEach(d => {
+        const data = d.data();
+        const isSameSlot = !(data.classId === currentClass && data.section === currentSection);
+        if (isSameSlot) conflict = data;
+      });
+
+      if (conflict) {
+        const clsLabel = (conflict.classId === 'KG1' || conflict.classId === 'KG2')
+          ? conflict.classId : 'Class ' + conflict.classId;
+        const warn = document.getElementById('conflictWarning');
+        warn.innerHTML = `⚠️ <strong>${esc(teacherName)}</strong> is already assigned to ${esc(clsLabel)}${esc(conflict.section||'')} during this slot. Save anyway?`;
+        warn.classList.add('show');
+        this.dataset.forceSave = '1';
+        this.textContent = 'Save Anyway';
+        this.disabled = false;
+        return;
+      }
+    }
+
+    const key   = `${day}|${period}`;
+    const entry = timetableData[key];
+
+    const payload = {
+      classId: currentClass,
+      section: currentSection,
+      day,
+      period,
+      subject,
+      teacherId,
+      teacherName: teacherName || '',
+      updatedAt: firebase.firestore.FieldValue.serverTimestamp()
+    };
+
+    if (entry && entry.id) {
+      await db.collection('timetable').doc(entry.id).update(payload);
+      timetableData[key] = { id: entry.id, ...payload };
+    } else {
+      const ref = await db.collection('timetable').add(payload);
+      timetableData[key] = { id: ref.id, ...payload };
+    }
+
+    renderCell(day, period);
+    await logActivity(`Updated timetable: ${day} P${period} — Class ${currentClass}${currentSection} → ${subject} (${teacherName})`);
+    showToast('Period saved.', 'success');
+    closePeriodModal();
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save period.', 'error');
+  } finally {
+    this.disabled = false;
+    this.textContent = this.dataset.forceSave === '1' ? 'Save Anyway' : 'Save';
+  }
+});
+</script>
+</body>
+</html>
