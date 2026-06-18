@@ -1,0 +1,765 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Team Members — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css" />
+
+  <style>
+    .page-content { overflow-y: auto; }
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    #liveClock {
+      font-size: 12.5px; color: var(--text-muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      cursor: pointer; padding: 5px 9px; font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    .section-gap { margin-bottom: 28px; }
+
+    .member-avatar {
+      width: 36px; height: 36px; border-radius: 50%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 13px; font-weight: 700; color: #fff;
+      flex-shrink: 0; letter-spacing: .5px;
+    }
+    .avatar-cell { display: flex; align-items: center; gap: 10px; }
+    .avatar-cell__name { font-weight: 600; font-size: 13.5px; }
+    .avatar-cell__sub  { font-size: 12px; color: var(--text-muted); margin-top: 1px; }
+
+    .av-super  { background: linear-gradient(135deg,#1e3a5f,#2d5986); }
+    .av-admin  { background: linear-gradient(135deg,#7c3aed,#a855f7); }
+    .av-staff  { background: linear-gradient(135deg,#0891b2,#06b6d4); }
+
+    .badge-super    { background:#dbeafe; color:#1e40af; }
+    .badge-admin-lv { background:#ede9fe; color:#6d28d9; }
+    .badge-staff    { background:#cffafe; color:#0e7490; }
+
+    .status-dot {
+      display: inline-flex; align-items: center; gap: 5px;
+      font-size: 12.5px; font-weight: 600;
+    }
+    .status-dot::before {
+      content: ''; width: 7px; height: 7px; border-radius: 50%;
+      background: currentColor; opacity: .8;
+    }
+    .status-active   { color: var(--success); }
+    .status-inactive { color: var(--text-muted); }
+
+    .tbl-actions { display: flex; gap: 6px; align-items: center; }
+    .tbl-btn {
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 5px; cursor: pointer; padding: 4px 9px;
+      font-size: 12.5px; font-weight: 500; color: var(--text-muted);
+      display: inline-flex; align-items: center; gap: 4px;
+      transition: all .15s; font-family: inherit;
+    }
+    .tbl-btn:hover { background: #e8edf5; color: var(--primary); border-color: var(--primary); }
+    .tbl-btn.danger:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+    .tbl-btn.success-btn:hover { background: #f0fdf4; color: var(--success); border-color: #86efac; }
+    .tbl-btn:disabled { opacity: .5; cursor: not-allowed; }
+
+    .modules-grid {
+      display: grid; grid-template-columns: repeat(2, 1fr);
+      gap: 8px; margin-top: 8px;
+    }
+    .module-check {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 12px; border: 1.5px solid var(--border);
+      border-radius: 6px; cursor: pointer;
+      transition: border-color .15s, background .15s;
+      font-size: 13.5px; font-weight: 500; color: var(--text); user-select: none;
+    }
+    .module-check:hover { border-color: var(--primary); background: #f8f9ff; }
+    .module-check input[type=checkbox] { width: 15px; height: 15px; cursor: pointer; accent-color: var(--primary); }
+    .module-check.checked { border-color: var(--primary); background: #eef2ff; }
+
+    #modulesWrap { display: none; }
+    #modulesWrap.visible { display: block; }
+
+    .activity-time   { font-size: 12px; color: var(--text-muted); white-space: nowrap; }
+    .activity-action { font-size: 13.5px; }
+    .activity-by     { font-size: 13px; color: var(--primary); font-weight: 500; }
+
+    @keyframes shimmer {
+      0%   { background-position: -600px 0; }
+      100% { background-position:  600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #e8edf3 25%, #f5f7fa 50%, #e8edf3 75%);
+      background-size: 1200px 100%; animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: inline-block;
+    }
+    .empty-state { text-align: center; padding: 36px 16px; color: var(--text-muted); font-size: 14px; }
+    .empty-state .ei { font-size: 36px; margin-bottom: 10px; }
+    .empty-state strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 4px; }
+
+    .modal-close {
+      background: none; border: none; font-size: 20px;
+      cursor: pointer; color: var(--text-muted); line-height: 1;
+      padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+
+    .perm-cards { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; margin-top: 6px; }
+    .perm-card {
+      border: 2px solid var(--border); border-radius: var(--radius);
+      padding: 12px 10px; cursor: pointer; text-align: center;
+      transition: border-color .15s, background .15s;
+    }
+    .perm-card:hover { border-color: var(--primary); background: #f8f9ff; }
+    .perm-card.selected { border-color: var(--primary); background: #eef2ff; }
+    .perm-card__icon  { font-size: 22px; margin-bottom: 4px; }
+    .perm-card__label { font-size: 13px; font-weight: 700; color: var(--text); }
+    .perm-card__desc  { font-size: 11px; color: var(--text-muted); margin-top: 3px; line-height: 1.4; }
+
+    .modal-section-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--text-muted); margin: 16px 0 8px;
+    }
+    #pwHint { font-size: 12px; color: var(--text-muted); margin-top: 4px; }
+
+    .count-chip {
+      background: var(--primary); color: #fff;
+      border-radius: 20px; font-size: 12px; font-weight: 700;
+      padding: 2px 8px; margin-left: 8px;
+    }
+
+    .perm-pills { display: flex; flex-wrap: wrap; gap: 4px; }
+    .perm-pill {
+      background: #f1f5f9; color: #334155;
+      border-radius: 4px; font-size: 11px; padding: 2px 6px; font-weight: 500;
+    }
+
+    /* ── Super Admin gate banner ─────────────────────── */
+    .access-banner {
+      background: #fff3cd; border: 1px solid #f4c542;
+      border-radius: var(--radius); padding: 14px 18px;
+      font-size: 13.5px; color: #664d03; margin-bottom: 20px;
+      display: none;
+    }
+    .access-banner.visible { display: flex; gap: 10px; align-items: flex-start; }
+
+    /* ── Password wrapper ────────────────────────────── */
+    .pw-wrap-modal { position: relative; }
+    .pw-wrap-modal input { padding-right: 38px; }
+    .pw-eye-modal {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; font-size: 15px;
+      color: var(--text-muted); padding: 2px;
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ════ SIDEBAR ════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html">📊 Dashboard</a></li>
+    <li><a href="announcements.html">📢 Announcements</a></li>
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html">📅 Timetable</a></li>
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html">💰 Fee Management</a></li>
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html">📝 Marks &amp; Results</a></li>
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html">📄 Certificates</a></li>
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html" class="active">👥 Team Members</a></li>
+    <li><a href="settings.html">⚙️ Settings</a></li>
+  </ul>
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color:rgba(255,255,255,.7);">🚪 Logout</a>
+  </div>
+</aside>
+
+<!-- ════ MAIN ════════════════════════════════════════════ -->
+<div class="main-content">
+
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">
+        Team Members
+        <span class="count-chip" id="memberCount">0</span>
+      </h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock">Loading…</div>
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="btn btn-primary btn-sm" id="openAddMemberBtn">👤 Add Team Member</button>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <main class="page-content">
+
+    <!-- Access notice shown to non-Super-Admin admins -->
+    <div class="access-banner" id="accessBanner">
+      <span style="font-size:18px;">⚠️</span>
+      <div>
+        <strong>View-only mode.</strong> You can see the team but only a Super Admin can add, edit,
+        or deactivate members. Contact your Super Admin if you need changes made.
+      </div>
+    </div>
+
+    <!-- Team table -->
+    <div class="card section-gap">
+      <div class="card-header">
+        <span class="card-title">👥 Admin Team</span>
+        <span style="font-size:13px;color:var(--text-muted);">Users with admin-level access</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div class="table-wrapper">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th style="min-width:200px;">Member</th>
+                <th style="min-width:200px;">Email</th>
+                <th style="min-width:140px;">Permission Level</th>
+                <th style="min-width:160px;">Modules / Access</th>
+                <th style="min-width:120px;">Added On</th>
+                <th style="min-width:90px;">Status</th>
+                <th style="min-width:180px;" id="actionsHeader">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="teamBody">
+              <tr><td colspan="7">
+                <div class="empty-state">
+                  <div class="skeleton" style="width:70%;height:16px;margin:0 auto 10px;"></div>
+                  <div class="skeleton" style="width:50%;height:12px;margin:0 auto;"></div>
+                </div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- Activity log -->
+    <div class="card section-gap">
+      <div class="card-header">
+        <span class="card-title">🕐 Recent Activity</span>
+        <span style="font-size:13px;color:var(--text-muted);">Last 50 actions</span>
+      </div>
+      <div class="card-body" style="padding:0;">
+        <div class="table-wrapper">
+          <table class="erp-table">
+            <thead>
+              <tr>
+                <th style="width:160px;">Timestamp</th>
+                <th>Action</th>
+                <th style="width:160px;">Done By</th>
+              </tr>
+            </thead>
+            <tbody id="activityBody">
+              <tr><td colspan="3">
+                <div class="empty-state">
+                  <span class="skeleton" style="width:60%;height:14px;display:block;margin:0 auto;"></span>
+                </div>
+              </td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ════ ADD / EDIT MODAL ════════════════════════════════ -->
+<div class="modal-overlay" id="memberModal">
+  <div class="modal-box" style="max-width:560px;">
+    <div class="modal-header">
+      <h3 class="card-title" id="modalHeading">👤 Add Team Member</h3>
+      <button class="modal-close" id="closeModalBtn">✕</button>
+    </div>
+    <div class="modal-body">
+
+      <!-- Only shown when adding a new member -->
+      <div id="addOnlyFields">
+        <div class="form-row">
+          <div class="form-group">
+            <label for="fName">Full Name <span style="color:var(--danger)">*</span></label>
+            <input type="text" id="fName" class="form-control" placeholder="e.g. Priya Sharma" maxlength="80" />
+          </div>
+          <div class="form-group">
+            <label for="fEmail">Email Address <span style="color:var(--danger)">*</span></label>
+            <input type="email" id="fEmail" class="form-control" placeholder="admin@school.edu" />
+          </div>
+        </div>
+        <div class="form-group">
+          <label for="fPassword">Temporary Password <span style="color:var(--danger)">*</span></label>
+          <div class="pw-wrap-modal">
+            <input type="password" id="fPassword" class="form-control"
+                   placeholder="Min. 8 characters" autocomplete="new-password" />
+            <button class="pw-eye-modal" type="button" id="pwEyeModal">👁</button>
+          </div>
+          <p id="pwHint">They can change this after first login.</p>
+        </div>
+        <hr style="border:none;border-top:1px solid var(--border);margin:4px 0 8px;" />
+      </div>
+
+      <!-- Permission level cards -->
+      <div class="modal-section-label">Permission Level <span style="color:var(--danger)">*</span></div>
+      <div class="perm-cards" id="permCards">
+        <div class="perm-card" data-level="Super Admin" tabindex="0" role="button">
+          <div class="perm-card__icon">🛡️</div>
+          <div class="perm-card__label">Super Admin</div>
+          <div class="perm-card__desc">Full access including team management</div>
+        </div>
+        <div class="perm-card" data-level="Admin" tabindex="0" role="button">
+          <div class="perm-card__icon">⚙️</div>
+          <div class="perm-card__label">Admin</div>
+          <div class="perm-card__desc">All modules except Team Members</div>
+        </div>
+        <div class="perm-card" data-level="Staff" tabindex="0" role="button">
+          <div class="perm-card__icon">📋</div>
+          <div class="perm-card__label">Staff</div>
+          <div class="perm-card__desc">Access only to selected modules</div>
+        </div>
+      </div>
+
+      <!-- Module checkboxes (visible only for Staff) -->
+      <div id="modulesWrap">
+        <div class="modal-section-label">Select Modules</div>
+        <div class="modules-grid" id="modulesGrid"></div>
+      </div>
+
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="cancelModalBtn">Cancel</button>
+      <button class="btn btn-primary" id="saveModalBtn">Add Member</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- ════ SCRIPT ══════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  /* ── Constants ──────────────────────────────────────── */
+  const MODULES = [
+    { key: 'teachers',      label: '👨‍🏫 Teachers' },
+    { key: 'students',      label: '👨‍🎓 Students' },
+    { key: 'timetable',     label: '📅 Timetable' },
+    { key: 'fees',          label: '💰 Fees' },
+    { key: 'marks',         label: '📝 Marks' },
+    { key: 'certificates',  label: '📄 Certificates' },
+    { key: 'announcements', label: '📢 Announcements' },
+  ];
+
+  const AV_CLASS = { 'Super Admin':'av-super', 'Admin':'av-admin', 'Staff':'av-staff' };
+  const BD_CLASS = { 'Super Admin':'badge-super', 'Admin':'badge-admin-lv', 'Staff':'badge-staff' };
+
+  /* ── State ──────────────────────────────────────────── */
+  let isSuperAdmin  = false;   // ← whether the logged-in user is Super Admin
+  let editingUid    = null;
+  let selectedLevel = '';
+  let selectedMods  = [];
+
+  /* ── Boot: checkAdminAuth only checks role='admin', which is correct.
+     We then inspect permissionLevel separately to decide capability. ── */
+  checkAdminAuth().then(user => initPage(user));
+
+  document.getElementById('hamburger').addEventListener('click', () =>
+    document.getElementById('sidebar').classList.toggle('mobile-open'));
+
+  /* ── Clock ──────────────────────────────────────────── */
+  (function () {
+    const el = document.getElementById('liveClock');
+    const D = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+    const M = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+    function tick() {
+      const d = new Date(); let h = d.getHours(); const ap = h>=12?'PM':'AM';
+      h = h%12||12; const p = n=>String(n).padStart(2,'0');
+      el.textContent = `${D[d.getDay()]}, ${p(d.getDate())} ${M[d.getMonth()]} ${d.getFullYear()} | ${p(h)}:${p(d.getMinutes())}:${p(d.getSeconds())} ${ap}`;
+    }
+    tick(); setInterval(tick, 1000);
+  })();
+
+  /* ── Helpers ────────────────────────────────────────── */
+  function gi(n) {
+    return (n||'?').trim().split(/\s+/).map(w=>w[0].toUpperCase()).slice(0,2).join('');
+  }
+  function esc(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function formatTs(ts) {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})
+      +' '+d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+  }
+  function formatDate(ts) {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  }
+  function relTime(ts) {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    const diff = Math.floor((Date.now()-d.getTime())/1000);
+    if (diff < 60)    return 'Just now';
+    if (diff < 3600)  return Math.floor(diff/60)+'m ago';
+    if (diff < 86400) return Math.floor(diff/3600)+'h ago';
+    return formatTs(ts);
+  }
+
+  /* ── Render team table ──────────────────────────────── */
+  function renderTeam(docs) {
+    document.getElementById('memberCount').textContent = docs.length;
+    const tbody = document.getElementById('teamBody');
+
+    if (!docs.length) {
+      tbody.innerHTML = `<tr><td colspan="7"><div class="empty-state">
+        <div class="ei">👥</div>
+        <strong>No team members yet</strong>
+        Click "Add Team Member" to get started.
+      </div></td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = '';
+    docs.forEach(d => {
+      const isActive = d.status !== 'inactive';
+      const avClass  = AV_CLASS[d.permissionLevel] || 'av-staff';
+      const bdClass  = BD_CLASS[d.permissionLevel] || 'badge-staff';
+
+      let accessHtml = '—';
+      if (d.permissionLevel === 'Super Admin') {
+        accessHtml = '<span class="perm-pill">All modules</span>';
+      } else if (d.permissionLevel === 'Admin') {
+        accessHtml = '<span class="perm-pill">All except Team</span>';
+      } else if (Array.isArray(d.permissions) && d.permissions.length) {
+        accessHtml = `<div class="perm-pills">${d.permissions.map(m=>`<span class="perm-pill">${esc(m)}</span>`).join('')}</div>`;
+      }
+
+      /* Actions: only render interactive buttons for Super Admins */
+      let actionsHtml;
+      if (isSuperAdmin) {
+        actionsHtml = `
+          <div class="tbl-actions">
+            <button class="tbl-btn" onclick="openEdit('${d.uid}')">✏️ Edit</button>
+            ${isActive
+              ? `<button class="tbl-btn danger" onclick="setStatus('${d.uid}','inactive','${esc(d.name)}',this)">🚫 Deactivate</button>`
+              : `<button class="tbl-btn success-btn" onclick="setStatus('${d.uid}','active','${esc(d.name)}',this)">✅ Reactivate</button>`
+            }
+          </div>`;
+      } else {
+        actionsHtml = `<span style="font-size:12px;color:var(--text-muted);">—</span>`;
+      }
+
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>
+          <div class="avatar-cell">
+            <div class="member-avatar ${avClass}">${gi(d.name)}</div>
+            <div>
+              <div class="avatar-cell__name">${esc(d.name||'—')}</div>
+              <div class="avatar-cell__sub">Added by ${esc(d.addedBy||'System')}</div>
+            </div>
+          </div>
+        </td>
+        <td style="font-size:13.5px;">${esc(d.email||'—')}</td>
+        <td><span class="badge ${bdClass}">${esc(d.permissionLevel||'—')}</span></td>
+        <td>${accessHtml}</td>
+        <td style="font-size:13px;color:var(--text-muted);">${formatDate(d.addedOn)}</td>
+        <td><span class="status-dot ${isActive?'status-active':'status-inactive'}">${isActive?'Active':'Inactive'}</span></td>
+        <td>${actionsHtml}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  /* ── Deactivate / Reactivate ────────────────────────── */
+  window.setStatus = async function (uid, newStatus, name, btn) {
+    if (!isSuperAdmin) { showToast('Super Admin access required.', 'error'); return; }
+    const verb = newStatus === 'inactive' ? 'Deactivate' : 'Reactivate';
+    if (!confirm(`${verb} team member "${name}"?`)) return;
+    btn.disabled = true;
+    try {
+      await db.collection('users').doc(uid).update({ status: newStatus });
+      await logActivity(`${verb}d team member: ${name}`);
+      showToast(`${name} ${newStatus==='inactive'?'deactivated':'reactivated'}.`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Could not update status. Try again.', 'error');
+      btn.disabled = false;
+    }
+  };
+
+  /* ── Live team listener ─────────────────────────────── */
+  function startTeamListener() {
+    db.collection('users').where('role','==','admin')
+      .onSnapshot(snap => {
+        const docs = snap.docs.map(d=>({uid:d.id,...d.data()}));
+        docs.sort((a,b)=>{
+          const o={'Super Admin':0,'Admin':1,'Staff':2};
+          const lo=(o[a.permissionLevel]??3)-(o[b.permissionLevel]??3);
+          return lo !== 0 ? lo : (a.name||'').localeCompare(b.name||'');
+        });
+        renderTeam(docs);
+      }, err => {
+        console.error(err);
+        document.getElementById('teamBody').innerHTML =
+          `<tr><td colspan="7"><div class="empty-state">⚠️ Could not load team members.</div></td></tr>`;
+      });
+  }
+
+  /* ── Activity log ───────────────────────────────────── */
+  function startActivityListener() {
+    db.collection('activity_log').orderBy('timestamp','desc').limit(50)
+      .onSnapshot(snap => {
+        const tbody = document.getElementById('activityBody');
+        if (snap.empty) {
+          tbody.innerHTML = `<tr><td colspan="3"><div class="empty-state"><div class="ei">🕐</div>No activity recorded yet.</div></td></tr>`;
+          return;
+        }
+        tbody.innerHTML = '';
+        snap.forEach(docSnap => {
+          const d = docSnap.data();
+          const tr = document.createElement('tr');
+          tr.innerHTML = `
+            <td class="activity-time">${relTime(d.timestamp)}</td>
+            <td class="activity-action">${esc(d.action||'—')}</td>
+            <td class="activity-by">${esc(d.by||'—')}</td>
+          `;
+          tbody.appendChild(tr);
+        });
+      }, () => {
+        document.getElementById('activityBody').innerHTML =
+          `<tr><td colspan="3"><div class="empty-state">Could not load activity.</div></td></tr>`;
+      });
+  }
+
+  /* ══════════════════════════════════════════════════════
+     MODAL
+  ══════════════════════════════════════════════════════ */
+  function buildModuleGrid(checked=[]) {
+    const grid = document.getElementById('modulesGrid');
+    grid.innerHTML = '';
+    MODULES.forEach(m => {
+      const isChecked = checked.includes(m.key);
+      const label = document.createElement('label');
+      label.className = 'module-check'+(isChecked?' checked':'');
+      label.innerHTML = `<input type="checkbox" value="${m.key}" ${isChecked?'checked':''} />${m.label}`;
+      label.querySelector('input').addEventListener('change', function() {
+        label.classList.toggle('checked', this.checked);
+      });
+      grid.appendChild(label);
+    });
+  }
+
+  function setPermLevel(level) {
+    selectedLevel = level;
+    document.querySelectorAll('.perm-card').forEach(c =>
+      c.classList.toggle('selected', c.dataset.level === level));
+    const wrap = document.getElementById('modulesWrap');
+    wrap.classList.toggle('visible', level === 'Staff');
+    if (level === 'Staff') buildModuleGrid(selectedMods);
+  }
+
+  document.getElementById('permCards').addEventListener('click', e => {
+    const card = e.target.closest('.perm-card'); if (card) setPermLevel(card.dataset.level);
+  });
+  document.getElementById('permCards').addEventListener('keydown', e => {
+    if (e.key==='Enter'||e.key===' ') { const c=e.target.closest('.perm-card'); if(c)setPermLevel(c.dataset.level); }
+  });
+
+  function openModal(uid) {
+    if (!isSuperAdmin) { showToast('Super Admin access required to manage the team.', 'error'); return; }
+    editingUid = uid || null;
+    document.getElementById('addOnlyFields').style.display = uid ? 'none' : 'block';
+    document.getElementById('modalHeading').textContent = uid ? '✏️ Edit Permissions' : '👤 Add Team Member';
+    document.getElementById('saveModalBtn').textContent  = uid ? 'Save Changes'        : 'Add Member';
+    document.getElementById('memberModal').classList.add('active');
+  }
+
+  function closeModal() {
+    document.getElementById('memberModal').classList.remove('active');
+    clearForm(); editingUid = null;
+  }
+
+  function clearForm() {
+    ['fName','fEmail','fPassword'].forEach(id => { document.getElementById(id).value = ''; });
+    selectedLevel = ''; selectedMods = [];
+    document.querySelectorAll('.perm-card').forEach(c => c.classList.remove('selected'));
+    document.getElementById('modulesWrap').classList.remove('visible');
+  }
+
+  document.getElementById('openAddMemberBtn').addEventListener('click', () => openModal(null));
+  document.getElementById('closeModalBtn').addEventListener('click', closeModal);
+  document.getElementById('cancelModalBtn').addEventListener('click', closeModal);
+  document.getElementById('memberModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('memberModal')) closeModal();
+  });
+
+  /* Password eye toggle */
+  document.getElementById('pwEyeModal').addEventListener('click', function() {
+    const inp = document.getElementById('fPassword');
+    const v = inp.type === 'text'; inp.type = v ? 'password' : 'text';
+    this.textContent = v ? '👁' : '🙈';
+  });
+
+  /* Open edit: pre-fill */
+  window.openEdit = async function (uid) {
+    if (!isSuperAdmin) { showToast('Super Admin access required.', 'error'); return; }
+    try {
+      const docSnap = await db.collection('users').doc(uid).get();
+      if (!docSnap.exists) { showToast('Member not found.', 'error'); return; }
+      const d = docSnap.data();
+      selectedMods = Array.isArray(d.permissions) ? d.permissions : [];
+      openModal(uid);
+      setPermLevel(d.permissionLevel || '');
+    } catch (e) { showToast('Could not load member data.', 'error'); }
+  };
+
+  function getCheckedModules() {
+    return [...document.querySelectorAll('#modulesGrid input[type=checkbox]:checked')].map(cb=>cb.value);
+  }
+
+  /* ── Save ───────────────────────────────────────────── */
+  document.getElementById('saveModalBtn').addEventListener('click', async function () {
+    const btn = this;
+    if (!isSuperAdmin) { showToast('Super Admin access required.', 'error'); return; }
+
+    if (!selectedLevel) { showToast('Please select a permission level.', 'error'); return; }
+    if (selectedLevel === 'Staff' && getCheckedModules().length === 0) {
+      showToast('Please select at least one module for Staff.', 'error'); return;
+    }
+
+    /* ── EDIT mode ──────────────────────────────────── */
+    if (editingUid) {
+      btn.disabled = true; btn.textContent = 'Saving…';
+      try {
+        const modules = selectedLevel === 'Staff' ? getCheckedModules() : [];
+        await db.collection('users').doc(editingUid).update({
+          permissionLevel: selectedLevel,
+          permissions: modules,
+        });
+        await logActivity('Updated permissions for a team member');
+        showToast('Permissions updated!', 'success');
+        closeModal();
+      } catch (e) {
+        console.error(e); showToast('Failed to update. Try again.', 'error');
+      } finally { btn.disabled = false; btn.textContent = 'Save Changes'; }
+      return;
+    }
+
+    /* ── ADD mode ───────────────────────────────────── */
+    const name     = document.getElementById('fName').value.trim();
+    const email    = document.getElementById('fEmail').value.trim();
+    const password = document.getElementById('fPassword').value;
+
+    if (!name)            { showToast('Full name is required.',       'error'); return; }
+    if (!email)           { showToast('Email address is required.',   'error'); return; }
+    if (password.length < 8) { showToast('Password must be at least 8 characters.', 'error'); return; }
+
+    btn.disabled = true; btn.textContent = 'Creating account…';
+
+    try {
+      const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
+      const uid  = cred.user.uid;
+
+      const modules = selectedLevel === 'Staff' ? getCheckedModules() : [];
+      await db.collection('users').doc(uid).set({
+        uid, email, name,
+        role:            'admin',
+        permissionLevel: selectedLevel,
+        permissions:     modules,
+        addedBy:         window.currentUser?.name || 'Super Admin',
+        addedOn:         firebase.firestore.FieldValue.serverTimestamp(),
+        status:          'active',
+      });
+
+      await logActivity('Team member added: ' + name);
+      showToast(`${name} added successfully!`, 'success');
+      closeModal();
+    } catch (e) {
+      console.error(e);
+      const msgs = {
+        'auth/email-already-in-use': 'This email is already registered.',
+        'auth/invalid-email':        'Please enter a valid email address.',
+        'auth/weak-password':        'Password is too weak. Use at least 8 characters.',
+        'auth/network-request-failed': 'Network error. Check your connection.',
+      };
+      showToast(msgs[e.code] || ('Failed: ' + (e.message||'Unknown error')), 'error');
+    } finally { btn.disabled = false; btn.textContent = 'Add Member'; }
+  });
+
+  /* ── Main init ──────────────────────────────────────── */
+  function initPage(user) {
+    document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+    document.getElementById('headerAvatar').textContent   = gi(user.name || user.email);
+
+    /*
+     * FIX: We no longer REDIRECT non-Super-Admins away.
+     * Instead we simply disable the action buttons and show a notice.
+     * This means ALL admins (regardless of permissionLevel) can visit the page.
+     * Only Super Admins get the interactive controls.
+     *
+     * permissionLevel might be missing on very first admin accounts created
+     * before this field was introduced — treat that case as Super Admin so
+     * the original account owner doesn't get locked out.
+     */
+    const level = user.permissionLevel;
+    isSuperAdmin = !level || level === 'Super Admin';
+
+    if (!isSuperAdmin) {
+      document.getElementById('accessBanner').classList.add('visible');
+      document.getElementById('openAddMemberBtn').disabled = true;
+      document.getElementById('openAddMemberBtn').title = 'Super Admin access required';
+    }
+
+    db.collection('settings').doc('schoolConfig').get().then(doc => {
+      if (doc.exists && doc.data().schoolName) {
+        document.getElementById('schoolName').textContent = doc.data().schoolName;
+        document.title = `Team Members — ${doc.data().schoolName}`;
+      }
+    }).catch(()=>{});
+
+    startTeamListener();
+    startActivityListener();
+  }
+
+})();
+</script>
+</body>
+</html>

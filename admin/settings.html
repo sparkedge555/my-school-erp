@@ -1,0 +1,1108 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Settings — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css" />
+
+  <style>
+    .page-content { overflow-y: auto; }
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    /* ── Header ─────────────────────────────────────── */
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border); border-radius: 6px;
+      cursor: pointer; padding: 5px 9px; font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Settings layout ─────────────────────────────── */
+    .settings-layout {
+      display: grid;
+      grid-template-columns: 220px 1fr;
+      gap: 24px;
+      align-items: start;
+    }
+    @media (max-width: 720px) {
+      .settings-layout { grid-template-columns: 1fr; }
+      .settings-tabs { display: flex; flex-wrap: wrap; flex-direction: row; }
+    }
+
+    /* ── Vertical tab nav ─────────────────────────────── */
+    .settings-tabs {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      position: sticky;
+      top: calc(var(--header-height) + 24px);
+    }
+    .tab-btn {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      padding: 13px 18px;
+      font-size: 13.5px;
+      font-weight: 500;
+      color: var(--text-muted);
+      background: none;
+      border: none;
+      border-left: 3px solid transparent;
+      cursor: pointer;
+      text-align: left;
+      transition: background .15s, color .15s, border-color .15s;
+      font-family: inherit;
+      width: 100%;
+    }
+    .tab-btn:hover { background: var(--bg); color: var(--text); }
+    .tab-btn.active {
+      background: #eef2ff;
+      color: var(--primary);
+      font-weight: 700;
+      border-left-color: var(--primary);
+    }
+    .tab-btn__icon { font-size: 17px; flex-shrink: 0; }
+    .tab-separator {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
+    }
+
+    /* ── Tab panels ──────────────────────────────────── */
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Section card ────────────────────────────────── */
+    .settings-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+      margin-bottom: 20px;
+    }
+    .settings-card:last-child { margin-bottom: 0; }
+    .settings-card__header {
+      padding: 16px 20px;
+      border-bottom: 1px solid var(--border);
+      display: flex;
+      align-items: center;
+      gap: 10px;
+    }
+    .settings-card__title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+    }
+    .settings-card__body { padding: 20px; }
+    .settings-card__footer {
+      padding: 14px 20px;
+      border-top: 1px solid var(--border);
+      display: flex;
+      justify-content: flex-end;
+      gap: 12px;
+      background: var(--bg);
+    }
+
+    /* ── Logo upload ─────────────────────────────────── */
+    .logo-upload-row {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 20px;
+      padding: 16px;
+      background: var(--bg);
+      border-radius: var(--radius);
+      border: 1px solid var(--border);
+    }
+    .logo-preview-wrap {
+      width: 80px; height: 80px;
+      border-radius: var(--radius);
+      border: 2px solid var(--border);
+      overflow: hidden;
+      flex-shrink: 0;
+      background: #f1f5f9;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 32px;
+    }
+    .logo-preview-wrap img {
+      width: 100%; height: 100%;
+      object-fit: contain;
+    }
+    .logo-upload-actions { display: flex; flex-direction: column; gap: 6px; }
+    .logo-upload-hint { font-size: 12px; color: var(--text-muted); }
+
+    /* ── Two-col classes + subjects ──────────────────── */
+    .two-panel {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
+    }
+    @media (max-width: 640px) { .two-panel { grid-template-columns: 1fr; } }
+
+    .panel-box {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      overflow: hidden;
+    }
+    .panel-box__head {
+      padding: 14px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 14px;
+      font-weight: 700;
+      color: var(--text);
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    .panel-box__body { padding: 14px 16px; }
+
+    /* chip list */
+    .chip-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 7px;
+      min-height: 40px;
+      margin-bottom: 14px;
+    }
+    .chip-item {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+      background: #eef2ff;
+      border: 1.5px solid #c7d2fe;
+      color: var(--primary);
+      border-radius: 20px;
+      padding: 4px 10px 4px 12px;
+      font-size: 13px;
+      font-weight: 600;
+    }
+    .chip-item.subject-chip {
+      background: #f0fdf4; border-color: #bbf7d0; color: #166534;
+    }
+    .chip-del {
+      background: none; border: none; cursor: pointer;
+      font-size: 14px; color: inherit; opacity: .6;
+      padding: 0; line-height: 1; display: flex; align-items: center;
+      transition: opacity .15s;
+    }
+    .chip-del:hover { opacity: 1; }
+
+    .add-row {
+      display: flex; gap: 8px;
+    }
+    .add-row input { flex: 1; }
+
+    /* ── Calendar events ─────────────────────────────── */
+    .cal-layout {
+      display: grid;
+      grid-template-columns: 340px 1fr;
+      gap: 20px;
+      align-items: start;
+    }
+    @media (max-width: 860px) { .cal-layout { grid-template-columns: 1fr; } }
+
+    .event-list { display: flex; flex-direction: column; gap: 10px; }
+    .event-item {
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      padding: 12px 14px;
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      transition: background .15s;
+    }
+    .event-item:hover { background: #f8f9ff; }
+    .event-date-badge {
+      flex-shrink: 0;
+      width: 48px;
+      text-align: center;
+      background: var(--primary);
+      color: #fff;
+      border-radius: 6px;
+      padding: 5px 4px;
+    }
+    .event-date-badge__day { font-size: 18px; font-weight: 800; line-height: 1; }
+    .event-date-badge__mon { font-size: 10px; font-weight: 600; text-transform: uppercase; letter-spacing: .05em; margin-top: 1px; }
+    .event-body { flex: 1; min-width: 0; }
+    .event-title { font-size: 14px; font-weight: 700; color: var(--text); }
+    .event-meta  { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 4px; }
+    .event-desc  { font-size: 12.5px; color: var(--text-muted); margin-top: 3px; }
+    .event-del {
+      background: none; border: none; cursor: pointer;
+      font-size: 16px; color: var(--text-muted); padding: 2px 4px;
+      border-radius: 4px; transition: background .15s, color .15s;
+    }
+    .event-del:hover { background: #fef2f2; color: var(--danger); }
+
+    /* type badges */
+    .badge-exam    { background: #fef9c3; color: #854d0e; }
+    .badge-holiday { background: #dcfce7; color: #166534; }
+    .badge-event   { background: #ede9fe; color: #5b21b6; }
+    .badge-meeting { background: #dbeafe; color: #1e40af; }
+
+    /* ── System tab ──────────────────────────────────── */
+    .export-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 12px;
+    }
+    .export-btn-card {
+      display: flex; flex-direction: column; align-items: center; justify-content: center;
+      gap: 8px; padding: 18px 12px;
+      background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius);
+      cursor: pointer; font-family: inherit; font-size: 13px; font-weight: 600;
+      color: var(--text); text-align: center;
+      transition: transform .18s, box-shadow .18s, background .15s;
+    }
+    .export-btn-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); background: #fff; color: var(--primary); }
+    .export-btn-card:disabled { opacity: .5; cursor: not-allowed; transform: none; }
+    .export-btn-card__icon { font-size: 26px; }
+
+    .danger-zone {
+      border: 1.5px solid #fecaca;
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      background: #fef2f2;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+    .danger-zone__text h4 { font-size: 14.5px; font-weight: 700; color: var(--danger); }
+    .danger-zone__text p  { font-size: 13px; color: #9f1239; margin-top: 3px; }
+
+    .version-chip {
+      display: inline-flex; align-items: center; gap: 8px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 20px; padding: 6px 14px; font-size: 13px;
+      font-weight: 600; color: var(--text-muted);
+    }
+
+    /* ── Upload progress ─────────────────────────────── */
+    .upload-progress {
+      display: none;
+      align-items: center; gap: 8px;
+      font-size: 13px; color: var(--primary);
+    }
+    .upload-progress.active { display: flex; }
+    .mini-spinner {
+      width: 14px; height: 14px;
+      border: 2px solid #c7d2fe;
+      border-top-color: var(--primary);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Skeleton / empty ────────────────────────────── */
+    @keyframes shimmer {
+      0%   { background-position: -600px 0; }
+      100% { background-position:  600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg,#e8edf3 25%,#f5f7fa 50%,#e8edf3 75%);
+      background-size: 1200px 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: block;
+    }
+    .empty-state {
+      text-align: center; padding: 28px 16px;
+      color: var(--text-muted); font-size: 13.5px;
+    }
+    .empty-state .ei { font-size: 32px; margin-bottom: 8px; }
+
+    /* ── Misc ────────────────────────────────────────── */
+    .section-label {
+      font-size: 11px; font-weight: 700; text-transform: uppercase;
+      letter-spacing: .07em; color: var(--text-muted); margin: 18px 0 10px;
+    }
+    .section-label:first-child { margin-top: 0; }
+
+    .modal-close {
+      background: none; border: none; font-size: 20px;
+      cursor: pointer; color: var(--text-muted); padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+  </style>
+</head>
+
+<body>
+
+<!-- ════════════════════════════════════════════════════════
+     SIDEBAR
+════════════════════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html"     data-page="dashboard">📊 Dashboard</a></li>
+    <li><a href="announcements.html" data-page="announcements">📢 Announcements</a></li>
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html"  data-page="teachers">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html"  data-page="students">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html" data-page="timetable">📅 Timetable</a></li>
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html"      data-page="fees">💰 Fee Management</a></li>
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html"     data-page="marks">📝 Marks &amp; Results</a></li>
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html"      data-page="docs">📄 Certificates</a></li>
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html"     data-page="team">👥 Team Members</a></li>
+    <li><a href="settings.html" data-page="settings" class="active">⚙️ Settings</a></li>
+  </ul>
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color:rgba(255,255,255,.7);">🚪 Logout</a>
+  </div>
+</aside>
+
+<!-- ════════════════════════════════════════════════════════
+     MAIN CONTENT
+════════════════════════════════════════════════════════ -->
+<div class="main-content">
+
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">Settings</h1>
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <main class="page-content">
+    <div class="settings-layout">
+
+      <!-- ── VERTICAL TAB NAV ───────────────────────── -->
+      <nav class="settings-tabs" id="settingsTabs">
+        <button class="tab-btn active" data-tab="profile">
+          <span class="tab-btn__icon">🏫</span> School Profile
+        </button>
+        <button class="tab-btn" data-tab="classes">
+          <span class="tab-btn__icon">📚</span> Classes &amp; Subjects
+        </button>
+        <div class="tab-separator"></div>
+        <button class="tab-btn" data-tab="calendar">
+          <span class="tab-btn__icon">📅</span> Academic Calendar
+        </button>
+        <div class="tab-separator"></div>
+        <button class="tab-btn" data-tab="system">
+          <span class="tab-btn__icon">🛠️</span> System
+        </button>
+      </nav>
+
+      <!-- ── PANELS ─────────────────────────────────── -->
+      <div id="panelsContainer">
+
+        <!-- ════════════════════════════════════════════
+             SCHOOL PROFILE
+        ════════════════════════════════════════════ -->
+        <div class="tab-panel active" id="panel-profile">
+
+          <div class="settings-card">
+            <div class="settings-card__header">
+              <span style="font-size:20px;">🖼️</span>
+              <span class="settings-card__title">School Logo</span>
+            </div>
+            <div class="settings-card__body">
+              <div class="logo-upload-row">
+                <div class="logo-preview-wrap" id="logoPreviewWrap">
+                  <span id="logoPlaceholder">🏫</span>
+                  <img id="logoPreviewImg" src="" alt="School Logo" style="display:none;" />
+                </div>
+                <div class="logo-upload-actions">
+                  <label class="btn btn-outline btn-sm" style="cursor:pointer;">
+                    📁 Choose Logo
+                    <input type="file" id="logoFileInput" accept="image/*" style="display:none;" />
+                  </label>
+                  <div class="upload-progress" id="uploadProgress">
+                    <div class="mini-spinner"></div>
+                    <span>Uploading…</span>
+                  </div>
+                  <span class="logo-upload-hint">PNG, JPG or SVG · Max 2 MB</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="settings-card__header">
+              <span style="font-size:20px;">📋</span>
+              <span class="settings-card__title">School Information</span>
+            </div>
+            <div class="settings-card__body">
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="fSchoolName">School Name *</label>
+                  <input type="text" id="fSchoolName" class="form-control" placeholder="e.g. Delhi Public School" />
+                </div>
+                <div class="form-group">
+                  <label for="fPrincipal">Principal Name</label>
+                  <input type="text" id="fPrincipal" class="form-control" placeholder="e.g. Dr. Rajesh Kumar" />
+                </div>
+              </div>
+              <div class="form-group">
+                <label for="fAddress">Address</label>
+                <textarea id="fAddress" class="form-control" rows="3" placeholder="Full school address…" style="resize:vertical;"></textarea>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="fPhone">Phone Number</label>
+                  <input type="tel" id="fPhone" class="form-control" placeholder="+91 98765 43210" />
+                </div>
+                <div class="form-group">
+                  <label for="fSchoolEmail">School Email</label>
+                  <input type="email" id="fSchoolEmail" class="form-control" placeholder="info@school.edu" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="fWebsite">Website</label>
+                  <input type="url" id="fWebsite" class="form-control" placeholder="https://school.edu" />
+                </div>
+                <div class="form-group">
+                  <label for="fAcademicYear">Academic Year</label>
+                  <input type="text" id="fAcademicYear" class="form-control" placeholder="2024-25" maxlength="10" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label for="fBoard">Affiliated Board</label>
+                  <select id="fBoard" class="form-control">
+                    <option value="">— Select —</option>
+                    <option value="CBSE">CBSE</option>
+                    <option value="ICSE">ICSE</option>
+                    <option value="CBSE (State)">CBSE (State)</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="fMotto">School Motto</label>
+                  <input type="text" id="fMotto" class="form-control" placeholder="e.g. Wisdom Through Knowledge" />
+                </div>
+              </div>
+            </div>
+            <div class="settings-card__footer">
+              <button class="btn btn-primary" id="saveProfileBtn">💾 Save Settings</button>
+            </div>
+          </div>
+        </div><!-- /panel-profile -->
+
+        <!-- ════════════════════════════════════════════
+             CLASSES & SUBJECTS
+        ════════════════════════════════════════════ -->
+        <div class="tab-panel" id="panel-classes">
+          <div class="two-panel">
+
+            <!-- Classes -->
+            <div class="panel-box">
+              <div class="panel-box__head">📚 Classes</div>
+              <div class="panel-box__body">
+                <div class="chip-list" id="classList"></div>
+                <div class="add-row">
+                  <input type="text" id="addClassInput" class="form-control" placeholder="e.g. Class 8A" maxlength="30" />
+                  <button class="btn btn-primary btn-sm" id="addClassBtn">+ Add</button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Subjects -->
+            <div class="panel-box">
+              <div class="panel-box__head">🔬 Subjects</div>
+              <div class="panel-box__body">
+                <div class="chip-list" id="subjectList"></div>
+                <div class="add-row">
+                  <input type="text" id="addSubjectInput" class="form-control" placeholder="e.g. Physics" maxlength="40" />
+                  <button class="btn btn-primary btn-sm" id="addSubjectBtn">+ Add</button>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /two-panel -->
+        </div><!-- /panel-classes -->
+
+        <!-- ════════════════════════════════════════════
+             ACADEMIC CALENDAR
+        ════════════════════════════════════════════ -->
+        <div class="tab-panel" id="panel-calendar">
+          <div class="cal-layout">
+
+            <!-- Add event form -->
+            <div class="settings-card" style="margin-bottom:0;">
+              <div class="settings-card__header">
+                <span style="font-size:18px;">➕</span>
+                <span class="settings-card__title">Add Calendar Event</span>
+              </div>
+              <div class="settings-card__body">
+                <div class="form-group">
+                  <label for="evName">Event Name *</label>
+                  <input type="text" id="evName" class="form-control" placeholder="e.g. Annual Day" />
+                </div>
+                <div class="form-group">
+                  <label for="evDate">Date *</label>
+                  <input type="date" id="evDate" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label for="evType">Type *</label>
+                  <select id="evType" class="form-control">
+                    <option value="Event">Event</option>
+                    <option value="Exam">Exam</option>
+                    <option value="Holiday">Holiday</option>
+                    <option value="Meeting">Meeting</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label for="evDesc">Description</label>
+                  <textarea id="evDesc" class="form-control" rows="3" placeholder="Optional details…" style="resize:vertical;"></textarea>
+                </div>
+              </div>
+              <div class="settings-card__footer">
+                <button class="btn btn-primary" id="addEventBtn">📅 Add Event</button>
+              </div>
+            </div>
+
+            <!-- Events list -->
+            <div>
+              <div class="settings-card" style="margin-bottom:0;">
+                <div class="settings-card__header">
+                  <span style="font-size:18px;">📅</span>
+                  <span class="settings-card__title">Upcoming Events</span>
+                </div>
+                <div class="settings-card__body" style="padding:14px;">
+                  <div class="event-list" id="eventList">
+                    <div class="empty-state">
+                      <div class="ei">📅</div>
+                      Loading calendar…
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div><!-- /cal-layout -->
+        </div><!-- /panel-calendar -->
+
+        <!-- ════════════════════════════════════════════
+             SYSTEM
+        ════════════════════════════════════════════ -->
+        <div class="tab-panel" id="panel-system">
+
+          <div class="settings-card">
+            <div class="settings-card__header">
+              <span style="font-size:20px;">📦</span>
+              <span class="settings-card__title">Export Data</span>
+            </div>
+            <div class="settings-card__body">
+              <p style="font-size:13.5px;color:var(--text-muted);margin-bottom:16px;">
+                Download a JSON snapshot of each collection. Useful for backups or data migration.
+              </p>
+              <div class="export-grid" id="exportGrid">
+                <!-- populated by JS -->
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="settings-card__header">
+              <span style="font-size:20px;">⚠️</span>
+              <span class="settings-card__title">Danger Zone</span>
+            </div>
+            <div class="settings-card__body" style="display:flex;flex-direction:column;gap:12px;">
+              <div class="danger-zone">
+                <div class="danger-zone__text">
+                  <h4>Clear Activity Log</h4>
+                  <p>Permanently deletes all activity records. This cannot be undone.</p>
+                </div>
+                <button class="btn btn-danger btn-sm" id="clearLogBtn">🗑️ Clear Log</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-card">
+            <div class="settings-card__header">
+              <span style="font-size:20px;">ℹ️</span>
+              <span class="settings-card__title">App Info</span>
+            </div>
+            <div class="settings-card__body" style="display:flex;flex-direction:column;gap:10px;">
+              <div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px;">
+                <div>
+                  <div style="font-size:14px;font-weight:700;color:var(--text);">My School ERP</div>
+                  <div style="font-size:12.5px;color:var(--text-muted);margin-top:2px;">Built with Firebase + Cloudinary</div>
+                </div>
+                <span class="version-chip">🏷️ Version 1.0.0</span>
+              </div>
+              <div style="font-size:12.5px;color:var(--text-muted);border-top:1px solid var(--border);padding-top:10px;">
+                Firebase Project: <code style="background:var(--bg);padding:2px 6px;border-radius:4px;font-size:12px;">my-school-erp-d15d2</code>
+              </div>
+            </div>
+          </div>
+
+        </div><!-- /panel-system -->
+
+      </div><!-- /panelsContainer -->
+    </div><!-- /settings-layout -->
+  </main>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- ════════════════════════════════════════════════════════
+     SCRIPT
+════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  /* ── Boot ─────────────────────────────────────────── */
+  checkAdminAuth().then(user => { initPage(user); });
+
+  document.getElementById('hamburger').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('mobile-open');
+  });
+
+  /* ── Defaults ─────────────────────────────────────── */
+  const DEFAULT_CLASSES = [
+    'KG1','KG2',
+    'Class 1','Class 2','Class 3','Class 4','Class 5','Class 6',
+    'Class 7','Class 8','Class 9','Class 10','Class 11','Class 12'
+  ];
+  const DEFAULT_SUBJECTS = [
+    'English','Hindi','Mathematics','Science','Social Studies',
+    'Physics','Chemistry','Biology','History','Geography',
+    'Civics','Computer Science','Physical Education','Art','Music'
+  ];
+
+  const EXPORT_COLLECTIONS = [
+    { key: 'students',     label: 'Students',     icon: '👨‍🎓' },
+    { key: 'teachers',     label: 'Teachers',     icon: '👨‍🏫' },
+    { key: 'fees',         label: 'Fee Records',  icon: '💰' },
+    { key: 'marks',        label: 'Marks',        icon: '📝' },
+    { key: 'announcements',label: 'Announcements',icon: '📢' },
+    { key: 'users',        label: 'Users',        icon: '👥' },
+    { key: 'activity_log', label: 'Activity Log', icon: '🕐' },
+  ];
+
+  const TYPE_BADGE = {
+    Exam:    'badge-exam',
+    Holiday: 'badge-holiday',
+    Event:   'badge-event',
+    Meeting: 'badge-meeting',
+  };
+
+  /* ── Helpers ──────────────────────────────────────── */
+  function getInitials(n) {
+    if (!n) return '?';
+    return n.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0,2).join('');
+  }
+  function escapeHtml(s) {
+    return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+  function formatDate(s) {
+    if (!s) return '—';
+    const d = new Date(s + 'T00:00:00');
+    return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'});
+  }
+  function formatTs(ts) {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})
+      + ' ' + d.toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit',hour12:true});
+  }
+
+  /* ── Tab switching ────────────────────────────────── */
+  document.getElementById('settingsTabs').addEventListener('click', e => {
+    const btn = e.target.closest('.tab-btn');
+    if (!btn) return;
+    const tab = btn.dataset.tab;
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('panel-' + tab).classList.add('active');
+  });
+
+  /* ═══════════════════════════════════════════════════
+     TAB 1: SCHOOL PROFILE
+  ═══════════════════════════════════════════════════ */
+
+  let currentLogoUrl = '';
+
+  /* ── Logo upload ──────────────────────────────────── */
+  document.getElementById('logoFileInput').addEventListener('change', async function () {
+    const file = this.files[0];
+    if (!file) return;
+    if (file.size > 2 * 1024 * 1024) { showToast('File too large (max 2 MB).', 'error'); return; }
+    const prog = document.getElementById('uploadProgress');
+    prog.classList.add('active');
+    try {
+      const url = await uploadToCloudinary(file, 'school');
+      currentLogoUrl = url;
+      setLogoPreview(url);
+      showToast('Logo uploaded! Save settings to apply.', 'success');
+    } catch (e) {
+      showToast('Logo upload failed. Try again.', 'error');
+    } finally {
+      prog.classList.remove('active');
+    }
+  });
+
+  function setLogoPreview(url) {
+    if (!url) return;
+    const img  = document.getElementById('logoPreviewImg');
+    const ph   = document.getElementById('logoPlaceholder');
+    img.src    = url;
+    img.style.display = 'block';
+    ph.style.display  = 'none';
+  }
+
+  /* ── Load profile ─────────────────────────────────── */
+  function loadProfile() {
+    db.collection('settings').doc('schoolConfig').get().then(doc => {
+      if (!doc.exists) return;
+      const d = doc.data();
+      document.getElementById('fSchoolName').value   = d.schoolName    || '';
+      document.getElementById('fPrincipal').value    = d.principal     || '';
+      document.getElementById('fAddress').value      = d.address       || '';
+      document.getElementById('fPhone').value        = d.phone         || '';
+      document.getElementById('fSchoolEmail').value  = d.schoolEmail   || '';
+      document.getElementById('fWebsite').value      = d.website       || '';
+      document.getElementById('fAcademicYear').value = d.academicYear  || '';
+      document.getElementById('fBoard').value        = d.board         || '';
+      document.getElementById('fMotto').value        = d.motto         || '';
+      if (d.logoUrl) {
+        currentLogoUrl = d.logoUrl;
+        setLogoPreview(d.logoUrl);
+      }
+      // Update sidebar name
+      if (d.schoolName) {
+        document.getElementById('schoolName').textContent = d.schoolName;
+        document.title = `Settings — ${d.schoolName}`;
+      }
+    }).catch(e => console.error('loadProfile:', e));
+  }
+
+  /* ── Save profile ─────────────────────────────────── */
+  document.getElementById('saveProfileBtn').addEventListener('click', async function () {
+    const name = document.getElementById('fSchoolName').value.trim();
+    if (!name) { showToast('School name is required.', 'error'); return; }
+    this.disabled = true; this.textContent = 'Saving…';
+    try {
+      await db.collection('settings').doc('schoolConfig').set({
+        schoolName:   name,
+        principal:    document.getElementById('fPrincipal').value.trim(),
+        address:      document.getElementById('fAddress').value.trim(),
+        phone:        document.getElementById('fPhone').value.trim(),
+        schoolEmail:  document.getElementById('fSchoolEmail').value.trim(),
+        website:      document.getElementById('fWebsite').value.trim(),
+        academicYear: document.getElementById('fAcademicYear').value.trim(),
+        board:        document.getElementById('fBoard').value,
+        motto:        document.getElementById('fMotto').value.trim(),
+        logoUrl:      currentLogoUrl,
+        updatedAt:    firebase.firestore.FieldValue.serverTimestamp(),
+      }, { merge: true });
+      await logActivity('School settings updated');
+      document.getElementById('schoolName').textContent = name;
+      document.title = `Settings — ${name}`;
+      showToast('Settings saved!', 'success');
+    } catch (e) {
+      console.error(e);
+      showToast('Failed to save. Try again.', 'error');
+    } finally {
+      this.disabled = false; this.textContent = '💾 Save Settings';
+    }
+  });
+
+  /* ═══════════════════════════════════════════════════
+     TAB 2: CLASSES & SUBJECTS
+  ═══════════════════════════════════════════════════ */
+
+  let classes  = [];
+  let subjects = [];
+
+  function renderChips(arr, containerId, isSubject) {
+    const el  = document.getElementById(containerId);
+    el.innerHTML = '';
+    if (!arr.length) {
+      el.innerHTML = `<span style="font-size:13px;color:var(--text-muted);">None added yet.</span>`;
+      return;
+    }
+    arr.forEach((item, i) => {
+      const chip = document.createElement('span');
+      chip.className = 'chip-item' + (isSubject ? ' subject-chip' : '');
+      chip.innerHTML = `${escapeHtml(item)}
+        <button class="chip-del" title="Remove" data-index="${i}">✕</button>`;
+      chip.querySelector('.chip-del').addEventListener('click', () => {
+        if (isSubject) {
+          subjects.splice(i, 1);
+          saveSubjects();
+        } else {
+          classes.splice(i, 1);
+          saveClasses();
+        }
+      });
+      el.appendChild(chip);
+    });
+  }
+
+  async function saveClasses() {
+    try {
+      await db.collection('settings').doc('classes').set({ list: classes }, { merge: true });
+      renderChips(classes, 'classList', false);
+      showToast('Classes updated.', 'success');
+    } catch (e) { showToast('Failed to save classes.', 'error'); }
+  }
+
+  async function saveSubjects() {
+    try {
+      await db.collection('settings').doc('subjects').set({ list: subjects }, { merge: true });
+      renderChips(subjects, 'subjectList', true);
+      showToast('Subjects updated.', 'success');
+    } catch (e) { showToast('Failed to save subjects.', 'error'); }
+  }
+
+  function loadClassesSubjects() {
+    // Classes
+    db.collection('settings').doc('classes').get().then(doc => {
+      classes = (doc.exists && Array.isArray(doc.data().list)) ? doc.data().list : [...DEFAULT_CLASSES];
+      if (!doc.exists) db.collection('settings').doc('classes').set({ list: classes });
+      renderChips(classes, 'classList', false);
+    }).catch(() => { classes = [...DEFAULT_CLASSES]; renderChips(classes, 'classList', false); });
+
+    // Subjects
+    db.collection('settings').doc('subjects').get().then(doc => {
+      subjects = (doc.exists && Array.isArray(doc.data().list)) ? doc.data().list : [...DEFAULT_SUBJECTS];
+      if (!doc.exists) db.collection('settings').doc('subjects').set({ list: subjects });
+      renderChips(subjects, 'subjectList', true);
+    }).catch(() => { subjects = [...DEFAULT_SUBJECTS]; renderChips(subjects, 'subjectList', true); });
+  }
+
+  document.getElementById('addClassBtn').addEventListener('click', () => {
+    const input = document.getElementById('addClassInput');
+    const val   = input.value.trim();
+    if (!val) return;
+    if (classes.includes(val)) { showToast('Class already exists.', 'warning'); return; }
+    classes.push(val);
+    input.value = '';
+    saveClasses();
+  });
+  document.getElementById('addClassInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('addClassBtn').click();
+  });
+
+  document.getElementById('addSubjectBtn').addEventListener('click', () => {
+    const input = document.getElementById('addSubjectInput');
+    const val   = input.value.trim();
+    if (!val) return;
+    if (subjects.includes(val)) { showToast('Subject already exists.', 'warning'); return; }
+    subjects.push(val);
+    input.value = '';
+    saveSubjects();
+  });
+  document.getElementById('addSubjectInput').addEventListener('keydown', e => {
+    if (e.key === 'Enter') document.getElementById('addSubjectBtn').click();
+  });
+
+  /* ═══════════════════════════════════════════════════
+     TAB 3: ACADEMIC CALENDAR
+  ═══════════════════════════════════════════════════ */
+
+  function renderEvents(docs) {
+    const list = document.getElementById('eventList');
+    if (!docs.length) {
+      list.innerHTML = `<div class="empty-state"><div class="ei">📅</div>No events yet. Add one!</div>`;
+      return;
+    }
+    // sort ascending by date
+    docs.sort((a, b) => (a.date || '').localeCompare(b.date || ''));
+    list.innerHTML = '';
+    docs.forEach(d => {
+      const dateObj = d.date ? new Date(d.date + 'T00:00:00') : null;
+      const day = dateObj ? String(dateObj.getDate()).padStart(2,'0') : '—';
+      const mon = dateObj ? dateObj.toLocaleString('en-IN',{month:'short'}).toUpperCase() : '';
+      const item = document.createElement('div');
+      item.className = 'event-item';
+      item.innerHTML = `
+        <div class="event-date-badge">
+          <div class="event-date-badge__day">${day}</div>
+          <div class="event-date-badge__mon">${mon}</div>
+        </div>
+        <div class="event-body">
+          <div class="event-title">${escapeHtml(d.name || 'Untitled')}</div>
+          <div class="event-meta">
+            <span class="badge ${TYPE_BADGE[d.type] || 'badge-info'}">${escapeHtml(d.type || 'Event')}</span>
+          </div>
+          ${d.description ? `<div class="event-desc">${escapeHtml(d.description)}</div>` : ''}
+        </div>
+        <button class="event-del" title="Delete event" onclick="deleteEvent('${d.id}', this)">🗑️</button>
+      `;
+      list.appendChild(item);
+    });
+  }
+
+  let calDocs = [];
+  function loadCalendar() {
+    db.collection('calendar_events')
+      .orderBy('date', 'asc')
+      .onSnapshot(snap => {
+        calDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderEvents(calDocs);
+      }, () => {
+        document.getElementById('eventList').innerHTML =
+          `<div class="empty-state">⚠️ Could not load calendar.</div>`;
+      });
+  }
+
+  document.getElementById('addEventBtn').addEventListener('click', async function () {
+    const name = document.getElementById('evName').value.trim();
+    const date = document.getElementById('evDate').value;
+    const type = document.getElementById('evType').value;
+    const desc = document.getElementById('evDesc').value.trim();
+    if (!name) { showToast('Event name is required.', 'error'); return; }
+    if (!date) { showToast('Please select a date.', 'error'); return; }
+    this.disabled = true; this.textContent = 'Adding…';
+    try {
+      await db.collection('calendar_events').add({
+        name, date, type, description: desc,
+        addedBy:   (window.currentUser && window.currentUser.name) ? window.currentUser.name : 'Admin',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp(),
+      });
+      await logActivity('Added calendar event: ' + name);
+      document.getElementById('evName').value = '';
+      document.getElementById('evDate').value = '';
+      document.getElementById('evDesc').value = '';
+      showToast('Event added!', 'success');
+    } catch (e) {
+      showToast('Failed to add event.', 'error');
+    } finally {
+      this.disabled = false; this.textContent = '📅 Add Event';
+    }
+  });
+
+  window.deleteEvent = async function (id, btn) {
+    if (!confirm('Delete this event?')) return;
+    btn.disabled = true;
+    try {
+      await db.collection('calendar_events').doc(id).delete();
+      await logActivity('Deleted a calendar event');
+      showToast('Event deleted.', 'success');
+    } catch (e) {
+      showToast('Could not delete event.', 'error');
+      btn.disabled = false;
+    }
+  };
+
+  /* ═══════════════════════════════════════════════════
+     TAB 4: SYSTEM
+  ═══════════════════════════════════════════════════ */
+
+  function buildExportGrid() {
+    const grid = document.getElementById('exportGrid');
+    grid.innerHTML = '';
+    EXPORT_COLLECTIONS.forEach(col => {
+      const btn = document.createElement('button');
+      btn.className = 'export-btn-card';
+      btn.innerHTML = `
+        <span class="export-btn-card__icon">${col.icon}</span>
+        ${col.label}
+      `;
+      btn.addEventListener('click', () => exportCollection(col.key, col.label, btn));
+      grid.appendChild(btn);
+    });
+  }
+
+  async function exportCollection(colKey, label, btn) {
+    btn.disabled = true;
+    const orig = btn.innerHTML;
+    btn.innerHTML = `<span class="export-btn-card__icon">⏳</span>Exporting…`;
+    try {
+      const snap = await db.collection(colKey).get();
+      const data = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+      // Convert Firestore Timestamps to ISO strings for JSON
+      const clean = JSON.parse(JSON.stringify(data, (key, val) => {
+        if (val && typeof val === 'object' && typeof val.toDate === 'function') {
+          return val.toDate().toISOString();
+        }
+        return val;
+      }));
+      const blob = new Blob([JSON.stringify(clean, null, 2)], { type: 'application/json' });
+      const url  = URL.createObjectURL(blob);
+      const a    = document.createElement('a');
+      a.href     = url;
+      a.download = `erp-${colKey}-${new Date().toISOString().split('T')[0]}.json`;
+      a.click();
+      URL.revokeObjectURL(url);
+      await logActivity(`Exported ${label} data`);
+      showToast(`${label} exported (${snap.size} records).`, 'success');
+    } catch (e) {
+      console.error(e);
+      showToast(`Failed to export ${label}.`, 'error');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = orig;
+    }
+  }
+
+  document.getElementById('clearLogBtn').addEventListener('click', async function () {
+    if (!confirm('This will permanently delete ALL activity log entries.\n\nAre you absolutely sure?')) return;
+    if (!confirm('Last chance — this cannot be undone. Delete all activity logs?')) return;
+    this.disabled = true; this.textContent = 'Clearing…';
+    try {
+      const snap  = await db.collection('activity_log').get();
+      const batch = db.batch();
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      showToast(`Activity log cleared (${snap.size} entries removed).`, 'success');
+    } catch (e) {
+      showToast('Failed to clear log.', 'error');
+    } finally {
+      this.disabled = false; this.textContent = '🗑️ Clear Log';
+    }
+  });
+
+  /* ═══════════════════════════════════════════════════
+     MAIN INIT
+  ═══════════════════════════════════════════════════ */
+  function initPage(user) {
+    document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+    document.getElementById('headerAvatar').textContent   = getInitials(user.name || user.email);
+
+    loadProfile();
+    loadClassesSubjects();
+    loadCalendar();
+    buildExportGrid();
+  }
+
+})();
+</script>
+</body>
+</html>

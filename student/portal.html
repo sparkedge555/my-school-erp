@@ -1,0 +1,1126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Student Portal — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css">
+
+  <style>
+    .page-content { overflow-y: auto; }
+
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    /* ── Lighter student sidebar theme ───────────────────── */
+    .sidebar.student-theme { background: var(--primary-light); }
+
+    .student-sidebar-card {
+      padding: 18px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.12);
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center; gap: 8px;
+    }
+    .student-sidebar-card img,
+    .student-sidebar-card .sc-avatar {
+      width: 64px; height: 64px; border-radius: 50%;
+      object-fit: cover; border: 3px solid rgba(255,255,255,.6);
+    }
+    .sc-avatar {
+      background: rgba(255,255,255,.18); color: #fff;
+      font-size: 22px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .sc-name { color: #fff; font-weight: 700; font-size: 14.5px; line-height: 1.3; }
+    .sc-meta { color: rgba(255,255,255,.75); font-size: 11.5px; }
+
+    /* ── Header ───────────────────────────────────────────── */
+    #liveClock {
+      font-size: 12.5px; color: var(--text-muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; cursor: pointer; padding: 5px 9px;
+      font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Tab/section visibility ──────────────────────────── */
+    .portal-section { display: none; }
+    .portal-section.active { display: block; }
+
+    /* ── Welcome card ─────────────────────────────────────── */
+    .welcome-card {
+      background: linear-gradient(120deg, var(--primary) 0%, var(--primary-light) 100%);
+      border-radius: var(--radius);
+      padding: 24px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+    }
+    .welcome-card img, .welcome-card .wc-avatar {
+      width: 72px; height: 72px; border-radius: 50%;
+      object-fit: cover; border: 3px solid rgba(255,255,255,.7);
+      flex-shrink: 0;
+    }
+    .wc-avatar {
+      background: rgba(255,255,255,.18); font-size: 24px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .welcome-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .welcome-card .wc-meta { font-size: 13px; opacity: .9; display: flex; gap: 14px; flex-wrap: wrap; }
+
+    /* ── Stat cards extra colors ─────────────────────────── */
+    .stat-card.info  { border-left-color: var(--info); }
+    .stat-card.success { border-left-color: var(--success); }
+    .stat-card.warning { border-left-color: var(--warning); }
+    .stat-sub { font-size: 11px; color: var(--text-muted); margin-top: 2px; }
+
+    /* ── Announcement cards ───────────────────────────────── */
+    .ann-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+    @media (max-width: 1000px) { .ann-grid { grid-template-columns: 1fr; } }
+    .ann-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 6px;
+      transition: box-shadow .15s, transform .15s;
+    }
+    .ann-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+    .ann-card__top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ann-card__title { font-weight: 600; font-size: 14.5px; flex: 1; }
+    .ann-card__msg { font-size: 13px; color: var(--text); line-height: 1.5; }
+    .ann-card__date { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+
+    /* ── Exam type tabs ───────────────────────────────────── */
+    .exam-tabs {
+      display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 18px;
+    }
+    .exam-tab {
+      padding: 7px 16px; border-radius: 20px; font-size: 13px; font-weight: 600;
+      background: var(--surface); border: 1px solid var(--border);
+      cursor: pointer; color: var(--text-muted); transition: background .15s, color .15s, border-color .15s;
+      font-family: inherit;
+    }
+    .exam-tab:hover { background: var(--bg); }
+    .exam-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+
+    /* ── Results table footer ─────────────────────────────── */
+    .results-footer-row td { font-weight: 700; background: var(--bg) !important; }
+    .grade-pill { font-weight: 700; }
+
+    /* ── Fee summary cards ────────────────────────────────── */
+    .fee-summary-grid {
+      display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin-bottom: 20px;
+    }
+    @media (max-width: 800px) { .fee-summary-grid { grid-template-columns: 1fr; } }
+    .fee-summary-card {
+      background: var(--surface); border-radius: var(--radius);
+      padding: 18px 20px; box-shadow: var(--shadow); text-align: center;
+    }
+    .fee-summary-card .fs-label { font-size: 12.5px; color: var(--text-muted); margin-bottom: 6px; }
+    .fee-summary-card .fs-value { font-size: 24px; font-weight: 700; }
+    .fee-summary-card.total .fs-value { color: var(--text); }
+    .fee-summary-card.paid .fs-value { color: var(--success); }
+    .fee-summary-card.due .fs-value { color: var(--danger); }
+
+    /* ── Timetable grid (read-only) ──────────────────────── */
+    .tt-grid-wrap { overflow-x: auto; }
+    table.tt-grid { width: 100%; border-collapse: collapse; min-width: 720px; }
+    .tt-grid th {
+      background: var(--primary); color: #fff; padding: 10px 12px;
+      font-size: 12.5px; text-align: center; white-space: nowrap;
+    }
+    .tt-grid td {
+      border: 1px solid var(--border); padding: 8px; text-align: center;
+      vertical-align: top; min-width: 110px;
+    }
+    .tt-grid td.day-label {
+      background: var(--bg); font-weight: 700; font-size: 12.5px;
+      color: var(--text); white-space: nowrap;
+    }
+    .tt-cell-content {
+      background: #eef3fb; border: 1px solid #c5d5ee; border-radius: 5px;
+      padding: 6px 8px; font-size: 12px; color: var(--primary); font-weight: 600;
+    }
+    .tt-cell-empty { font-size: 12px; color: var(--text-muted); opacity: .5; }
+
+    /* ── Documents table ──────────────────────────────────── */
+    .doc-type-cell { font-weight: 600; }
+
+    /* ── Change password ─────────────────────────────────── */
+    .pw-card { max-width: 460px; }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 38px; }
+    .pw-eye {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; font-size: 15px;
+      color: var(--text-muted); padding: 2px;
+    }
+
+    /* ── Empty / loading states ──────────────────────────── */
+    .empty-state { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 13.5px; }
+    .empty-state .empty-icon { font-size: 32px; margin-bottom: 8px; }
+
+    @keyframes shimmer { 0% { background-position: -600px 0; } 100% { background-position: 600px 0; } }
+    .skeleton {
+      background: linear-gradient(90deg,#e8edf3 25%,#f5f7fa 50%,#e8edf3 75%);
+      background-size: 1200px 100%; animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: inline-block;
+    }
+
+    /* ── Print ────────────────────────────────────────────── */
+    @media print {
+      body * { visibility: hidden; }
+      #printArea, #printArea * { visibility: visible; }
+      #printArea {
+        position: absolute; top: 0; left: 0; width: 100%; padding: 24px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     SIDEBAR
+══════════════════════════════════════════════════════════ -->
+<aside class="sidebar student-theme" id="sidebar">
+  <div class="student-sidebar-card">
+    <div id="sidebarPhotoWrap"><div class="sc-avatar">?</div></div>
+    <div class="sc-name" id="sidebarName">Loading…</div>
+    <div class="sc-meta" id="sidebarMeta">—</div>
+  </div>
+
+  <ul class="sidebar-nav">
+    <li><a href="#" data-section="dashboard"     class="nav-link active">🏠 Dashboard</a></li>
+    <li><a href="#" data-section="results"        class="nav-link">📊 My Results</a></li>
+    <li><a href="#" data-section="fees"            class="nav-link">💰 Fee Status</a></li>
+    <li><a href="#" data-section="timetable"       class="nav-link">📅 My Timetable</a></li>
+    <li><a href="#" data-section="announcements"   class="nav-link">📢 Announcements</a></li>
+    <li><a href="#" data-section="documents"       class="nav-link">📄 My Documents</a></li>
+    <li><a href="#" data-section="password"        class="nav-link">🔑 Change Password</a></li>
+  </ul>
+
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color: rgba(255,255,255,.7);">
+      🚪 Logout
+    </a>
+  </div>
+</aside>
+
+<!-- ══════════════════════════════════════════════════════════
+     MAIN CONTENT
+══════════════════════════════════════════════════════════ -->
+<div class="main-content">
+
+  <!-- TOP HEADER -->
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title" id="headerTitle">Student Portal</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock">Loading…</div>
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <span class="badge badge-primary" id="headerClassBadge">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <!-- PAGE BODY -->
+  <main class="page-content" id="pageContent">
+
+    <!-- ══════════════ DASHBOARD ══════════════ -->
+    <section class="portal-section active" id="section-dashboard">
+
+      <div class="welcome-card" id="welcomeCard">
+        <div class="skeleton" style="width:72px;height:72px;border-radius:50%;"></div>
+        <div>
+          <h2>Loading…</h2>
+        </div>
+      </div>
+
+      <div class="stats-grid" id="dashStatsGrid">
+        <div class="stat-card"><div class="skeleton" style="width:60px;height:36px"></div></div>
+        <div class="stat-card"><div class="skeleton" style="width:60px;height:36px"></div></div>
+        <div class="stat-card"><div class="skeleton" style="width:60px;height:36px"></div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📢 Latest Announcements</span>
+          <a href="#" data-section="announcements" class="nav-link" style="font-size:13px;color:var(--primary);font-weight:500;text-decoration:none;">View All →</a>
+        </div>
+        <div class="card-body">
+          <div class="ann-grid" id="dashAnnGrid">
+            <div class="empty-state"><div class="skeleton" style="width:80%;height:16px;margin:0 auto 8px"></div></div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ══════════════ MY RESULTS ══════════════ -->
+    <section class="portal-section" id="section-results">
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <span class="card-title">📊 My Results</span>
+          <button class="btn btn-outline btn-sm" id="printResultsBtn">🖨️ Print</button>
+        </div>
+        <div class="card-body">
+          <div class="exam-tabs" id="examTabs">
+            <button class="exam-tab active" data-exam="All">All</button>
+          </div>
+
+          <div id="printArea">
+            <div class="table-wrapper">
+              <table class="erp-table" id="resultsTable">
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th style="width:110px;">Max Marks</th>
+                    <th style="width:110px;">Obtained</th>
+                    <th style="width:90px;">Grade</th>
+                    <th>Remarks</th>
+                  </tr>
+                </thead>
+                <tbody id="resultsBody">
+                  <tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📊</div>Loading results…</div></td></tr>
+                </tbody>
+                <tfoot id="resultsFooter"></tfoot>
+              </table>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ FEE STATUS ══════════════ -->
+    <section class="portal-section" id="section-fees">
+      <div class="fee-summary-grid">
+        <div class="fee-summary-card total">
+          <div class="fs-label">Total Annual Fee</div>
+          <div class="fs-value" id="feeTotalVal">—</div>
+        </div>
+        <div class="fee-summary-card paid">
+          <div class="fs-label">Paid</div>
+          <div class="fs-value" id="feePaidVal">—</div>
+        </div>
+        <div class="fee-summary-card due">
+          <div class="fs-label">Balance Due</div>
+          <div class="fs-value" id="feeDueVal">—</div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header"><span class="card-title">💰 Payment History</span></div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-wrapper">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th>Month</th>
+                  <th>Fee Type</th>
+                  <th>Amount</th>
+                  <th>Date Paid</th>
+                  <th>Receipt No.</th>
+                  <th>Mode</th>
+                  <th style="width:130px;">Receipt</th>
+                </tr>
+              </thead>
+              <tbody id="feeTableBody">
+                <tr><td colspan="7"><div class="empty-state"><div class="empty-icon">💰</div>Loading fee records…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ MY TIMETABLE ══════════════ -->
+    <section class="portal-section" id="section-timetable">
+      <div class="card">
+        <div class="card-header"><span class="card-title">📅 My Timetable</span></div>
+        <div class="card-body" style="padding:0;">
+          <div class="tt-grid-wrap" id="ttGridWrap">
+            <div class="empty-state"><div class="empty-icon">📅</div>Loading timetable…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ ANNOUNCEMENTS ══════════════ -->
+    <section class="portal-section" id="section-announcements">
+      <div class="card">
+        <div class="card-header"><span class="card-title">📢 All Announcements</span></div>
+        <div class="card-body">
+          <div class="ann-grid" id="fullAnnGrid">
+            <div class="empty-state"><div class="empty-icon">📢</div>Loading announcements…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ MY DOCUMENTS ══════════════ -->
+    <section class="portal-section" id="section-documents">
+      <div class="card">
+        <div class="card-header"><span class="card-title">📄 My Documents</span></div>
+        <div class="card-body" style="padding:0;">
+          <div class="table-wrapper">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th>Certificate Type</th>
+                  <th style="width:140px;">Date</th>
+                  <th style="width:160px;">Serial No.</th>
+                  <th style="width:110px;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="docsTableBody">
+                <tr><td colspan="4"><div class="empty-state"><div class="empty-icon">📄</div>Loading documents…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ CHANGE PASSWORD ══════════════ -->
+    <section class="portal-section" id="section-password">
+      <div class="card pw-card">
+        <div class="card-header"><span class="card-title">🔑 Change Password</span></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="curPassword">Current Password *</label>
+            <div class="pw-wrap">
+              <input type="password" id="curPassword" class="form-control" placeholder="Enter current password" autocomplete="current-password" />
+              <button class="pw-eye" type="button" data-target="curPassword">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="newPassword">New Password *</label>
+            <div class="pw-wrap">
+              <input type="password" id="newPassword" class="form-control" placeholder="Min. 6 characters" autocomplete="new-password" />
+              <button class="pw-eye" type="button" data-target="newPassword">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="confirmPassword">Confirm New Password *</label>
+            <div class="pw-wrap">
+              <input type="password" id="confirmPassword" class="form-control" placeholder="Re-enter new password" autocomplete="new-password" />
+              <button class="pw-eye" type="button" data-target="confirmPassword">👁</button>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="changePwBtn" style="margin-top:8px;">Update Password</button>
+        </div>
+      </div>
+    </section>
+
+  </main><!-- /page-content -->
+</div><!-- /main-content -->
+
+<div id="toast-container"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  Boot
+// ════════════════════════════════════════════════════════════
+let studentData = null;
+let allMarks = [];
+let allFees = [];
+let allAnnouncements = [];
+let activeExamFilter = 'All';
+
+checkStudentAuth().then(user => { initStudentPortal(user); });
+
+// ════════════════════════════════════════════════════════════
+//  Live clock
+// ════════════════════════════════════════════════════════════
+(function startClock() {
+  const el = document.getElementById('liveClock');
+  const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function tick() {
+    const d = new Date();
+    const day  = days[d.getDay()];
+    const date = String(d.getDate()).padStart(2,'0');
+    const mon  = months[d.getMonth()];
+    const yr   = d.getFullYear();
+    let   h    = d.getHours();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    el.textContent = `${day}, ${date} ${mon} ${yr} | ${String(h).padStart(2,'0')}:${mm}:${ss} ${ampm}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// ════════════════════════════════════════════════════════════
+//  Hamburger (mobile sidebar)
+// ════════════════════════════════════════════════════════════
+document.getElementById('hamburger').addEventListener('click', function () {
+  document.getElementById('sidebar').classList.toggle('mobile-open');
+});
+
+// ════════════════════════════════════════════════════════════
+//  Sidebar navigation (section switching)
+// ════════════════════════════════════════════════════════════
+const sectionTitles = {
+  dashboard: 'Student Portal',
+  results: 'My Results',
+  fees: 'Fee Status',
+  timetable: 'My Timetable',
+  announcements: 'Announcements',
+  documents: 'My Documents',
+  password: 'Change Password'
+};
+
+document.querySelectorAll('.nav-link[data-section]').forEach(link => {
+  link.addEventListener('click', function (e) {
+    e.preventDefault();
+    const target = this.dataset.section;
+    switchSection(target);
+    document.getElementById('sidebar').classList.remove('mobile-open');
+  });
+});
+
+function switchSection(target) {
+  document.querySelectorAll('.nav-link[data-section]').forEach(l => {
+    l.classList.toggle('active', l.dataset.section === target);
+  });
+  document.querySelectorAll('.portal-section').forEach(s => {
+    s.classList.toggle('active', s.id === 'section-' + target);
+  });
+  document.getElementById('headerTitle').textContent = sectionTitles[target] || 'Student Portal';
+}
+
+// ════════════════════════════════════════════════════════════
+//  Helpers
+// ════════════════════════════════════════════════════════════
+function getInitials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0,2).join('');
+}
+
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatCurrency(n) {
+  return '₹' + Number(n||0).toLocaleString('en-IN');
+}
+
+function formatDate(val) {
+  if (!val) return '—';
+  if (val.toDate) val = val.toDate();
+  if (val instanceof Date) {
+    return val.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+  }
+  return String(val);
+}
+
+function priorityBadge(p) {
+  const map = { 'Urgent':'badge-danger', 'Important':'badge-warning', 'Normal':'badge-info' };
+  return `<span class="badge ${map[p] || 'badge-info'}">${escapeHtml(p||'Normal')}</span>`;
+}
+
+function gradeFromPercent(pct) {
+  if (pct >= 90) return 'A+';
+  if (pct >= 80) return 'A';
+  if (pct >= 70) return 'B+';
+  if (pct >= 60) return 'B';
+  if (pct >= 50) return 'C';
+  if (pct >= 40) return 'D';
+  return 'F';
+}
+
+function gradeColor(grade) {
+  if (['A+','A'].includes(grade)) return 'var(--success)';
+  if (['B+','B'].includes(grade)) return 'var(--info)';
+  if (grade === 'C') return 'var(--warning)';
+  return 'var(--danger)';
+}
+
+// ════════════════════════════════════════════════════════════
+//  Init
+// ════════════════════════════════════════════════════════════
+async function initStudentPortal(user) {
+  try {
+    const doc = await db.collection('students').doc(user.uid).get();
+    if (!doc.exists) {
+      showToast('Could not find your student record.', 'error');
+      return;
+    }
+    studentData = { id: doc.id, ...doc.data() };
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to load your profile.', 'error');
+    return;
+  }
+
+  const s = studentData;
+  const stClass = s.class || s.className || '';
+  const firstName = (s.name || 'Student').split(' ')[0];
+
+  // ── School name ───────────────────────────────────────────
+  db.collection('settings').doc('schoolConfig').get().then(cfgDoc => {
+    if (cfgDoc.exists && cfgDoc.data().schoolName) {
+      document.title = `Student Portal — ${cfgDoc.data().schoolName}`;
+    }
+  }).catch(() => {});
+
+  // ── Sidebar card ─────────────────────────────────────────
+  const photoWrap = document.getElementById('sidebarPhotoWrap');
+  photoWrap.innerHTML = s.photoUrl
+    ? `<img src="${escapeHtml(s.photoUrl)}" alt="${escapeHtml(s.name)}" />`
+    : `<div class="sc-avatar">${getInitials(s.name)}</div>`;
+  document.getElementById('sidebarName').textContent = s.name || 'Student';
+  document.getElementById('sidebarMeta').textContent =
+    `${stClass ? (stClass.startsWith('KG') ? stClass : 'Class ' + stClass) : ''}${s.section ? ' - ' + s.section : ''} · ${s.admissionNo || ''}`;
+
+  // ── Header ───────────────────────────────────────────────
+  document.getElementById('headerUserName').textContent = s.name || user.email || 'Student';
+  document.getElementById('headerAvatar').textContent   = getInitials(s.name || user.email);
+  document.getElementById('headerClassBadge').textContent =
+    `${stClass ? (stClass.startsWith('KG') ? stClass : 'Class ' + stClass) : '—'}${s.section ? '-' + s.section : ''}`;
+
+  // ── Welcome card ─────────────────────────────────────────
+  const photoHtml = s.photoUrl
+    ? `<img src="${escapeHtml(s.photoUrl)}" alt="${escapeHtml(s.name)}" />`
+    : `<div class="wc-avatar">${getInitials(s.name)}</div>`;
+  document.getElementById('welcomeCard').innerHTML = `
+    ${photoHtml}
+    <div>
+      <h2>Hello, ${escapeHtml(firstName)}! 👋</h2>
+      <div class="wc-meta">
+        <span>🎓 ${stClass ? (stClass.startsWith('KG') ? stClass : 'Class ' + stClass) : '—'}${s.section ? ' - ' + escapeHtml(s.section) : ''}</span>
+        <span>🆔 ${escapeHtml(s.admissionNo || '—')}</span>
+      </div>
+    </div>`;
+
+  loadDashboardStats(s);
+  loadAnnouncements(s);
+  loadResults(s);
+  loadFees(s);
+  loadTimetable(s);
+  loadDocuments(s);
+}
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD STATS
+// ════════════════════════════════════════════════════════════
+async function loadDashboardStats(s) {
+  const grid = document.getElementById('dashStatsGrid');
+  grid.innerHTML = `
+    <div class="stat-card info" id="statNextExam">
+      <div>
+        <div class="stat-number" id="statNextExamVal"><span class="skeleton" style="width:80px;height:24px;display:inline-block;"></span></div>
+        <div class="stat-label">Next Exam</div>
+      </div>
+      <div class="stat-icon">📝</div>
+    </div>
+    <div class="stat-card warning" id="statFeeDue">
+      <div>
+        <div class="stat-number" id="statFeeDueVal"><span class="skeleton" style="width:80px;height:36px;display:inline-block;"></span></div>
+        <div class="stat-label">Fee Due</div>
+      </div>
+      <div class="stat-icon">💰</div>
+    </div>
+    <div class="stat-card success" id="statResult">
+      <div>
+        <div class="stat-number" id="statResultVal"><span class="skeleton" style="width:60px;height:36px;display:inline-block;"></span></div>
+        <div class="stat-label">Latest Result %</div>
+      </div>
+      <div class="stat-icon">📊</div>
+    </div>
+  `;
+
+  // Next exam — look for announcements tagged priority/category as Exam-like, or an 'events' collection if present
+  try {
+    const stClass = s.class || s.className || '';
+    const snap = await db.collection('announcements')
+      .orderBy('postedDate', 'desc').limit(20).get();
+    let nextExam = null;
+    snap.forEach(d => {
+      const a = d.data();
+      const matchesTarget = a.target === 'All' || a.target === 'Students Only' ||
+        (a.target === 'Specific Class' && a.class === stClass);
+      const isExam = /exam/i.test(a.title || '') || /exam/i.test(a.category || '');
+      if (matchesTarget && isExam && !nextExam) nextExam = a;
+    });
+    document.getElementById('statNextExamVal').textContent = nextExam ? nextExam.title : 'None scheduled';
+  } catch {
+    document.getElementById('statNextExamVal').textContent = '—';
+  }
+
+  // Fee due
+  try {
+    const snap = await db.collection('fees').where('studentId', '==', s.id).get();
+    let paid = 0;
+    snap.forEach(d => { if ((d.data().status || 'paid') === 'paid') paid += Number(d.data().amount || 0); });
+    const total = Number(s.annualFee || 0);
+    const due = Math.max(total - paid, 0);
+    document.getElementById('statFeeDueVal').textContent = total ? formatCurrency(due) : (s.feeStatus === 'pending' ? 'Pending' : '—');
+  } catch {
+    document.getElementById('statFeeDueVal').textContent = '—';
+  }
+
+  // Latest result %
+  try {
+    const snap = await db.collection('marks').where('studentId', '==', s.id)
+      .orderBy('examDate', 'desc').limit(20).get();
+    if (snap.empty) {
+      document.getElementById('statResultVal').textContent = '—';
+    } else {
+      let latestExam = null;
+      const rows = [];
+      snap.forEach(d => {
+        const m = d.data();
+        if (!latestExam) latestExam = m.examName || m.exam;
+        if ((m.examName || m.exam) === latestExam) rows.push(m);
+      });
+      let obtained = 0, max = 0;
+      rows.forEach(m => { obtained += Number(m.marksObtained ?? m.marks ?? 0); max += Number(m.maxMarks || 100); });
+      const pct = max ? Math.round((obtained / max) * 100) : 0;
+      document.getElementById('statResultVal').textContent = max ? pct + '%' : '—';
+    }
+  } catch {
+    document.getElementById('statResultVal').textContent = '—';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  ANNOUNCEMENTS
+// ════════════════════════════════════════════════════════════
+function announcementMatches(a, s) {
+  const stClass = s.class || s.className || '';
+  return a.target === 'All' || a.target === 'Students Only' ||
+    (a.target === 'Specific Class' && a.class === stClass);
+}
+
+function renderAnnCard(d, id) {
+  const date = d.postedDate
+    ? (d.postedDate.toDate ? d.postedDate.toDate().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : d.postedDate)
+    : '—';
+  return `
+    <div class="ann-card">
+      <div class="ann-card__top">
+        ${priorityBadge(d.priority || 'Normal')}
+        ${d.pinned ? '<span class="badge badge-warning">📌 Pinned</span>' : ''}
+        <span class="ann-card__title">${escapeHtml(d.title || 'Untitled')}</span>
+      </div>
+      <div class="ann-card__msg">${escapeHtml(d.message || '')}</div>
+      <div class="ann-card__date">${date}</div>
+    </div>`;
+}
+
+async function loadAnnouncements(s) {
+  try {
+    db.collection('announcements').orderBy('postedDate', 'desc').limit(50)
+      .onSnapshot(snap => {
+        allAnnouncements = [];
+        snap.forEach(d => allAnnouncements.push({ id: d.id, ...d.data() }));
+        const relevant = allAnnouncements.filter(a => announcementMatches(a, s));
+
+        // Dashboard preview (top 3)
+        const dashGrid = document.getElementById('dashAnnGrid');
+        if (!relevant.length) {
+          dashGrid.innerHTML = `<div class="empty-state"><div class="empty-icon">📢</div>No announcements yet.</div>`;
+        } else {
+          dashGrid.innerHTML = relevant.slice(0, 3).map(d => renderAnnCard(d, d.id)).join('');
+        }
+
+        // Full list
+        const fullGrid = document.getElementById('fullAnnGrid');
+        if (!relevant.length) {
+          fullGrid.innerHTML = `<div class="empty-state"><div class="empty-icon">📢</div>No announcements yet.</div>`;
+        } else {
+          fullGrid.innerHTML = relevant.map(d => renderAnnCard(d, d.id)).join('');
+        }
+      }, () => {
+        document.getElementById('dashAnnGrid').innerHTML = `<div class="empty-state">Could not load announcements.</div>`;
+        document.getElementById('fullAnnGrid').innerHTML = `<div class="empty-state">Could not load announcements.</div>`;
+      });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  MY RESULTS
+// ════════════════════════════════════════════════════════════
+const EXAM_TYPES = ['All', 'Unit Test 1', 'Unit Test 2', 'Half Yearly', 'Annual'];
+
+function buildExamTabs() {
+  const wrap = document.getElementById('examTabs');
+  wrap.innerHTML = EXAM_TYPES.map(t =>
+    `<button class="exam-tab ${t === 'All' ? 'active' : ''}" data-exam="${escapeHtml(t)}">${escapeHtml(t)}</button>`
+  ).join('');
+  wrap.querySelectorAll('.exam-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activeExamFilter = btn.dataset.exam;
+      wrap.querySelectorAll('.exam-tab').forEach(b => b.classList.toggle('active', b === btn));
+      renderResultsTable();
+    });
+  });
+}
+
+async function loadResults(s) {
+  buildExamTabs();
+  try {
+    const snap = await db.collection('marks').where('studentId', '==', s.id)
+      .orderBy('examDate', 'desc').get();
+    allMarks = [];
+    snap.forEach(d => allMarks.push({ id: d.id, ...d.data() }));
+    renderResultsTable();
+  } catch (err) {
+    console.error(err);
+    document.getElementById('resultsBody').innerHTML =
+      `<tr><td colspan="5"><div class="empty-state">⚠️ Could not load results.</div></td></tr>`;
+  }
+}
+
+function renderResultsTable() {
+  const body = document.getElementById('resultsBody');
+  const footer = document.getElementById('resultsFooter');
+
+  const list = activeExamFilter === 'All'
+    ? allMarks
+    : allMarks.filter(m => (m.examName || m.exam) === activeExamFilter);
+
+  if (!list.length) {
+    body.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📊</div>No results found${activeExamFilter !== 'All' ? ' for ' + escapeHtml(activeExamFilter) : ''}.</div></td></tr>`;
+    footer.innerHTML = '';
+    return;
+  }
+
+  let totalObtained = 0, totalMax = 0;
+  body.innerHTML = list.map(m => {
+    const obtained = Number(m.marksObtained ?? m.marks ?? 0);
+    const max = Number(m.maxMarks || 100);
+    totalObtained += obtained; totalMax += max;
+    const pct = max ? Math.round((obtained / max) * 100) : 0;
+    const grade = m.grade || gradeFromPercent(pct);
+    return `<tr>
+      <td>${escapeHtml(m.subject || '—')}</td>
+      <td>${max}</td>
+      <td style="font-weight:600;">${obtained}</td>
+      <td><span class="grade-pill" style="color:${gradeColor(grade)};">${escapeHtml(grade)}</span></td>
+      <td style="font-size:13px;color:var(--text-muted);">${escapeHtml(m.remarks || '—')}</td>
+    </tr>`;
+  }).join('');
+
+  const overallPct = totalMax ? Math.round((totalObtained / totalMax) * 100) : 0;
+  const overallGrade = gradeFromPercent(overallPct);
+  footer.innerHTML = `
+    <tr class="results-footer-row">
+      <td>Total</td>
+      <td>${totalMax}</td>
+      <td>${totalObtained}</td>
+      <td colspan="2">Percentage: ${overallPct}% · Overall Grade:
+        <span style="color:${gradeColor(overallGrade)};">${overallGrade}</span>
+      </td>
+    </tr>`;
+}
+
+document.getElementById('printResultsBtn').addEventListener('click', () => window.print());
+
+// ════════════════════════════════════════════════════════════
+//  FEE STATUS
+// ════════════════════════════════════════════════════════════
+function feeStatusBadge(st) {
+  const map = { paid: 'badge-success', pending: 'badge-danger', partial: 'badge-warning' };
+  const label = st ? st.charAt(0).toUpperCase() + st.slice(1) : 'Paid';
+  return `<span class="badge ${map[st] || 'badge-success'}">${label}</span>`;
+}
+
+async function loadFees(s) {
+  try {
+    db.collection('fees').where('studentId', '==', s.id).orderBy('paidDate', 'desc')
+      .onSnapshot(snap => {
+        allFees = [];
+        snap.forEach(d => allFees.push({ id: d.id, ...d.data() }));
+        renderFeeSummary(s);
+        renderFeeTable();
+      }, () => {
+        document.getElementById('feeTableBody').innerHTML =
+          `<tr><td colspan="7"><div class="empty-state">⚠️ Could not load fee records.</div></td></tr>`;
+      });
+  } catch (err) {
+    console.error(err);
+  }
+}
+
+function renderFeeSummary(s) {
+  let paid = 0;
+  allFees.forEach(f => { if ((f.status || 'paid') === 'paid') paid += Number(f.amount || 0); });
+  const total = Number(s.annualFee || 0);
+  const due = Math.max(total - paid, 0);
+
+  document.getElementById('feeTotalVal').textContent = total ? formatCurrency(total) : '—';
+  document.getElementById('feePaidVal').textContent  = formatCurrency(paid);
+  document.getElementById('feeDueVal').textContent   = total ? formatCurrency(due) : (s.feeStatus === 'pending' ? 'Pending' : formatCurrency(0));
+}
+
+function renderFeeTable() {
+  const body = document.getElementById('feeTableBody');
+  if (!allFees.length) {
+    body.innerHTML = `<tr><td colspan="7"><div class="empty-state"><div class="empty-icon">💰</div>No fee records found.</div></td></tr>`;
+    return;
+  }
+  body.innerHTML = allFees.map(f => `
+    <tr>
+      <td>${escapeHtml(f.month || '—')}</td>
+      <td>${escapeHtml(f.feeType || f.description || '—')}</td>
+      <td style="font-weight:600;">${formatCurrency(f.amount)}</td>
+      <td>${formatDate(f.paidDate)}</td>
+      <td style="font-size:12px;color:var(--text-muted);">${escapeHtml(f.receiptNo || '—')}</td>
+      <td>${escapeHtml(f.mode || f.paymentMode || '—')}</td>
+      <td>
+        <button class="btn btn-sm btn-outline" onclick="downloadReceipt('${f.id}')">⬇ Receipt</button>
+      </td>
+    </tr>`).join('');
+}
+
+window.downloadReceipt = function (feeId) {
+  const f = allFees.find(x => x.id === feeId);
+  if (!f) return;
+  const s = studentData;
+  const win = window.open('', '_blank');
+  const stClass = s.class || s.className || '';
+  win.document.write(`
+    <!DOCTYPE html><html><head><title>Fee Receipt</title>
+    <style>
+      body { font-family: 'Segoe UI', Arial, sans-serif; padding: 40px; color: #1a1a2e; }
+      .receipt-box { max-width: 560px; margin: 0 auto; border: 2px solid #1e3a5f; border-radius: 8px; padding: 30px; }
+      h2 { text-align:center; color:#1e3a5f; margin-bottom: 4px; }
+      .sub { text-align:center; color:#6c757d; font-size:13px; margin-bottom: 24px; }
+      table { width:100%; border-collapse:collapse; margin-top: 10px; }
+      td { padding: 8px 4px; font-size: 14px; border-bottom: 1px solid #eee; }
+      td.label { color:#6c757d; width: 45%; }
+      .total-row td { font-weight:700; font-size:16px; border-top:2px solid #1e3a5f; border-bottom:none; }
+      .footer { margin-top:30px; text-align:center; color:#6c757d; font-size:12px; }
+    </style></head><body>
+    <div class="receipt-box">
+      <h2>Fee Receipt</h2>
+      <div class="sub">Receipt No: ${escapeHtml(f.receiptNo || '—')}</div>
+      <table>
+        <tr><td class="label">Student Name</td><td>${escapeHtml(s.name||'')}</td></tr>
+        <tr><td class="label">Admission No.</td><td>${escapeHtml(s.admissionNo||'')}</td></tr>
+        <tr><td class="label">Class</td><td>${escapeHtml(stClass)}${s.section?'-'+escapeHtml(s.section):''}</td></tr>
+        <tr><td class="label">Month / Period</td><td>${escapeHtml(f.month||'—')}</td></tr>
+        <tr><td class="label">Fee Type</td><td>${escapeHtml(f.feeType||f.description||'—')}</td></tr>
+        <tr><td class="label">Date Paid</td><td>${formatDate(f.paidDate)}</td></tr>
+        <tr><td class="label">Payment Mode</td><td>${escapeHtml(f.mode||f.paymentMode||'—')}</td></tr>
+        <tr class="total-row"><td>Amount Paid</td><td>₹${Number(f.amount||0).toLocaleString('en-IN')}</td></tr>
+      </table>
+      <div class="footer">This is a computer-generated receipt.</div>
+    </div>
+    <scr` + `ipt>window.onload = () => window.print();</scr` + `ipt>
+    </body></html>`);
+  win.document.close();
+};
+
+// ════════════════════════════════════════════════════════════
+//  MY TIMETABLE (read-only)
+// ════════════════════════════════════════════════════════════
+const DAY_ORDER = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+async function loadTimetable(s) {
+  const wrap = document.getElementById('ttGridWrap');
+  try {
+    const stClass = s.class || s.className || '';
+    const snap = await db.collection('timetable')
+      .where('classId', '==', stClass)
+      .where('section', '==', s.section || '')
+      .get();
+
+    if (snap.empty) {
+      wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div>No timetable assigned yet.</div>`;
+      return;
+    }
+
+    const byDay = {};
+    let maxPeriod = 0;
+    snap.forEach(d => {
+      const t = d.data();
+      const day = t.day || 'Unknown';
+      const period = Number(t.period || 0);
+      maxPeriod = Math.max(maxPeriod, period);
+      if (!byDay[day]) byDay[day] = {};
+      byDay[day][period] = t;
+    });
+
+    const days = DAY_ORDER.filter(d => byDay[d]);
+    const periods = Array.from({ length: maxPeriod }, (_, i) => i + 1);
+
+    let html = `<table class="tt-grid"><thead><tr><th>Day / Period</th>`;
+    periods.forEach(p => { html += `<th>Period ${p}</th>`; });
+    html += `</tr></thead><tbody>`;
+    days.forEach(day => {
+      html += `<tr><td class="day-label">${escapeHtml(day)}</td>`;
+      periods.forEach(p => {
+        const cell = byDay[day][p];
+        html += `<td>${cell
+          ? `<div class="tt-cell-content">${escapeHtml(cell.subject || cell.className || '—')}${cell.teacherName ? '<br><span style="font-weight:400;opacity:.8;">'+escapeHtml(cell.teacherName)+'</span>' : ''}</div>`
+          : `<span class="tt-cell-empty">—</span>`}</td>`;
+      });
+      html += `</tr>`;
+    });
+    html += `</tbody></table>`;
+    wrap.innerHTML = html;
+  } catch (err) {
+    console.error(err);
+    wrap.innerHTML = `<div class="empty-state">⚠️ Could not load timetable.</div>`;
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  MY DOCUMENTS
+// ════════════════════════════════════════════════════════════
+async function loadDocuments(s) {
+  const body = document.getElementById('docsTableBody');
+  try {
+    const snap = await db.collection('certificates').where('studentId', '==', s.id).get();
+    if (snap.empty) {
+      body.innerHTML = `<tr><td colspan="4"><div class="empty-state"><div class="empty-icon">📄</div>No documents issued yet.</div></td></tr>`;
+      return;
+    }
+    const rows = [];
+    snap.forEach(d => {
+      const c = d.data();
+      rows.push({ id: d.id, ...c });
+    });
+    body.innerHTML = rows.map(c => `
+      <tr>
+        <td class="doc-type-cell">${escapeHtml(c.type || c.certificateType || 'Certificate')}</td>
+        <td>${formatDate(c.issuedDate || c.createdAt)}</td>
+        <td style="font-size:12px;color:var(--text-muted);">${escapeHtml(c.serialNo || c.certificateNo || '—')}</td>
+        <td>
+          <button class="btn btn-sm btn-outline" onclick="printDocument('${c.id}')">🖨️ Print</button>
+        </td>
+      </tr>`).join('');
+    window._studentDocs = rows;
+  } catch (err) {
+    console.error(err);
+    body.innerHTML = `<tr><td colspan="4"><div class="empty-state">⚠️ Could not load documents.</div></td></tr>`;
+  }
+}
+
+window.printDocument = function (docId) {
+  const c = (window._studentDocs || []).find(x => x.id === docId);
+  if (!c) return;
+  if (c.fileUrl) {
+    window.open(c.fileUrl, '_blank');
+    return;
+  }
+  const s = studentData;
+  const win = window.open('', '_blank');
+  win.document.write(`
+    <!DOCTYPE html><html><head><title>${escapeHtml(c.type||'Certificate')}</title>
+    <style>
+      body { font-family:'Segoe UI', Arial, sans-serif; padding:40px; color:#1a1a2e; }
+      .box { max-width:600px; margin:0 auto; border:2px solid #1e3a5f; border-radius:8px; padding:30px; text-align:center; }
+      h2 { color:#1e3a5f; }
+      table { width:100%; margin-top:20px; }
+      td { padding:6px; font-size:14px; text-align:left; }
+      td.label { color:#6c757d; width:40%; }
+    </style></head><body>
+    <div class="box">
+      <h2>${escapeHtml(c.type || c.certificateType || 'Certificate')}</h2>
+      <table>
+        <tr><td class="label">Student Name</td><td>${escapeHtml(s.name||'')}</td></tr>
+        <tr><td class="label">Admission No.</td><td>${escapeHtml(s.admissionNo||'')}</td></tr>
+        <tr><td class="label">Serial No.</td><td>${escapeHtml(c.serialNo||c.certificateNo||'—')}</td></tr>
+        <tr><td class="label">Issue Date</td><td>${formatDate(c.issuedDate||c.createdAt)}</td></tr>
+      </table>
+    </div>
+    <scr` + `ipt>window.onload = () => window.print();</scr` + `ipt>
+    </body></html>`);
+  win.document.close();
+};
+
+// ════════════════════════════════════════════════════════════
+//  CHANGE PASSWORD
+// ════════════════════════════════════════════════════════════
+document.querySelectorAll('.pw-eye').forEach(btn => {
+  btn.addEventListener('click', function () {
+    const inp = document.getElementById(this.dataset.target);
+    const visible = inp.type === 'text';
+    inp.type = visible ? 'password' : 'text';
+    this.textContent = visible ? '👁' : '🙈';
+  });
+});
+
+document.getElementById('changePwBtn').addEventListener('click', async function () {
+  const curPw  = document.getElementById('curPassword').value;
+  const newPw  = document.getElementById('newPassword').value;
+  const confPw = document.getElementById('confirmPassword').value;
+
+  if (!curPw || !newPw || !confPw) {
+    showToast('All fields are required.', 'error');
+    return;
+  }
+  if (newPw.length < 6) {
+    showToast('New password must be at least 6 characters.', 'error');
+    return;
+  }
+  if (newPw !== confPw) {
+    showToast('New password and confirmation do not match.', 'error');
+    return;
+  }
+
+  this.disabled = true;
+  this.textContent = 'Updating…';
+
+  try {
+    const user = firebase.auth().currentUser;
+    const credential = firebase.auth.EmailAuthProvider.credential(user.email, curPw);
+    await user.reauthenticateWithCredential(credential);
+    await user.updatePassword(newPw);
+
+    document.getElementById('curPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmPassword').value = '';
+    showToast('Password updated successfully!', 'success');
+  } catch (err) {
+    console.error(err);
+    const msgs = {
+      'auth/wrong-password': 'Current password is incorrect.',
+      'auth/weak-password': 'New password is too weak (min 6 characters).',
+      'auth/too-many-requests': 'Too many attempts. Please try again later.',
+    };
+    showToast(msgs[err.code] || err.message || 'Failed to update password.', 'error');
+  } finally {
+    this.disabled = false;
+    this.textContent = 'Update Password';
+  }
+});
+</script>
+</body>
+</html>

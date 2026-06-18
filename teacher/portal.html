@@ -1,0 +1,1258 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Teacher Portal — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css">
+
+  <style>
+    .page-content { overflow-y: auto; }
+
+    .sidebar-logo span.school-name {
+      white-space: nowrap; overflow: hidden;
+      text-overflow: ellipsis; max-width: 170px;
+    }
+
+    /* ── Teacher sidebar card ─────────────────────────────── */
+    .sidebar.teacher-theme { background: var(--primary-light); }
+
+    .teacher-sidebar-card {
+      padding: 18px 16px;
+      border-bottom: 1px solid rgba(255,255,255,.12);
+      display: flex; flex-direction: column; align-items: center;
+      text-align: center; gap: 8px;
+    }
+    .teacher-sidebar-card img,
+    .teacher-sidebar-card .sc-avatar {
+      width: 64px; height: 64px; border-radius: 50%;
+      object-fit: cover; border: 3px solid rgba(255,255,255,.6);
+    }
+    .sc-avatar {
+      background: rgba(255,255,255,.18); color: #fff;
+      font-size: 22px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .sc-name { color: #fff; font-weight: 700; font-size: 14.5px; line-height: 1.3; }
+    .sc-meta { color: rgba(255,255,255,.75); font-size: 11.5px; }
+
+    /* ── Header ───────────────────────────────────────────── */
+    #liveClock {
+      font-size: 12.5px; color: var(--text-muted);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: 6px; padding: 5px 12px;
+      white-space: nowrap; font-variant-numeric: tabular-nums;
+    }
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none; border: 1px solid var(--border);
+      border-radius: 6px; cursor: pointer; padding: 5px 9px;
+      font-size: 16px; color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Section visibility ───────────────────────────────── */
+    .portal-section { display: none; }
+    .portal-section.active { display: block; }
+
+    /* ── Welcome / today card ─────────────────────────────── */
+    .welcome-card {
+      background: linear-gradient(120deg, var(--primary) 0%, var(--primary-light) 100%);
+      border-radius: var(--radius);
+      padding: 24px;
+      color: #fff;
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      margin-bottom: 24px;
+      box-shadow: var(--shadow);
+    }
+    .welcome-card img, .welcome-card .wc-avatar {
+      width: 72px; height: 72px; border-radius: 50%;
+      object-fit: cover; border: 3px solid rgba(255,255,255,.7);
+      flex-shrink: 0;
+    }
+    .wc-avatar {
+      background: rgba(255,255,255,.18); font-size: 24px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .welcome-card h2 { font-size: 20px; font-weight: 700; margin-bottom: 4px; }
+    .welcome-card .wc-meta { font-size: 13px; opacity: .9; display: flex; gap: 14px; flex-wrap: wrap; }
+
+    .stat-card.info  { border-left-color: var(--info); }
+    .stat-card.success { border-left-color: var(--success); }
+    .stat-card.warning { border-left-color: var(--warning); }
+
+    /* ── Today's schedule timeline ───────────────────────── */
+    .schedule-timeline { display: flex; flex-direction: column; gap: 10px; }
+    .schedule-item {
+      display: flex; align-items: center; gap: 14px;
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 12px 16px;
+    }
+    .schedule-item__period {
+      background: var(--primary); color: #fff; font-weight: 700;
+      font-size: 12.5px; padding: 6px 12px; border-radius: 20px;
+      white-space: nowrap; flex-shrink: 0;
+    }
+    .schedule-item__time { font-size: 12.5px; color: var(--text-muted); white-space: nowrap; flex-shrink: 0; min-width: 80px; }
+    .schedule-item__details { flex: 1; }
+    .schedule-item__class { font-weight: 700; font-size: 14px; }
+    .schedule-item__subject { font-size: 13px; color: var(--text-muted); }
+
+    /* ── Announcement cards ───────────────────────────────── */
+    .ann-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 14px; }
+    @media (max-width: 1000px) { .ann-grid { grid-template-columns: 1fr; } }
+    .ann-card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex; flex-direction: column; gap: 6px;
+      transition: box-shadow .15s, transform .15s;
+    }
+    .ann-card:hover { box-shadow: var(--shadow-lg); transform: translateY(-2px); }
+    .ann-card__top { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+    .ann-card__title { font-weight: 600; font-size: 14.5px; flex: 1; }
+    .ann-card__msg { font-size: 13px; color: var(--text); line-height: 1.5; }
+    .ann-card__date { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+
+    /* ── Timetable grid (read-only) ──────────────────────── */
+    .tt-grid-wrap { overflow-x: auto; }
+    table.tt-grid { width: 100%; border-collapse: collapse; min-width: 720px; }
+    .tt-grid th {
+      background: var(--primary); color: #fff; padding: 10px 12px;
+      font-size: 12.5px; text-align: center; white-space: nowrap;
+    }
+    .tt-grid td {
+      border: 1px solid var(--border); padding: 8px; text-align: center;
+      vertical-align: top; min-width: 110px;
+    }
+    .tt-grid td.day-label {
+      background: var(--bg); font-weight: 700; font-size: 12.5px;
+      color: var(--text); white-space: nowrap;
+    }
+    .tt-cell-content {
+      background: #eef3fb; border: 1px solid #c5d5ee; border-radius: 5px;
+      padding: 6px 8px; font-size: 12px; color: var(--primary); font-weight: 600;
+    }
+    .tt-cell-empty { font-size: 12px; color: var(--text-muted); opacity: .5; }
+
+    /* ── Enter Marks filter row ───────────────────────────── */
+    .marks-filter-row {
+      display: flex; align-items: flex-end; gap: 14px; flex-wrap: wrap; margin-bottom: 20px;
+    }
+    .marks-filter-row .form-group { margin-bottom: 0; min-width: 150px; flex: 1; }
+
+    .locked-badge {
+      display: inline-flex; align-items: center; gap: 4px;
+      font-size: 12px; color: var(--text-muted); font-weight: 500;
+    }
+
+    .marks-input { width: 90px; }
+
+    /* ── My Students ──────────────────────────────────────── */
+    .student-select-row { display: flex; gap: 14px; align-items: flex-end; margin-bottom: 20px; flex-wrap: wrap; }
+    .student-select-row .form-group { margin-bottom: 0; min-width: 220px; }
+
+    .st-avatar {
+      width: 38px; height: 38px; border-radius: 50%;
+      object-fit: cover; border: 2px solid var(--border); display: block;
+    }
+    .avatar-initials {
+      width: 38px; height: 38px; border-radius: 50%;
+      background: var(--primary-light); color: #fff;
+      font-size: 13px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+    }
+
+    /* View student modal (read-only) */
+    .modal-close {
+      background: none; border: none; font-size: 20px; cursor: pointer;
+      color: var(--text-muted); line-height: 1; padding: 2px 6px; border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+    .profile-hero {
+      display: flex; gap: 20px; align-items: flex-start;
+      padding: 20px; border-bottom: 1px solid var(--border);
+    }
+    .profile-hero img, .profile-hero .avatar-lg {
+      width: 90px; height: 90px; border-radius: 50%;
+      object-fit: cover; border: 3px solid var(--primary); flex-shrink: 0;
+    }
+    .avatar-lg {
+      background: var(--primary); color: #fff; font-size: 28px; font-weight: 700;
+      display: flex; align-items: center; justify-content: center;
+    }
+    .profile-name { font-size: 20px; font-weight: 700; }
+    .profile-meta { font-size: 13px; color: var(--text-muted); margin-top: 2px; }
+    .profile-badges { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+    .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 20px; padding: 20px; }
+    .detail-field label {
+      font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--text-muted); display: block; margin-bottom: 2px;
+    }
+    .detail-field span { font-size: 13.5px; font-weight: 500; }
+
+    /* ── Change password ─────────────────────────────────── */
+    .pw-card { max-width: 460px; }
+    .pw-wrap { position: relative; }
+    .pw-wrap input { padding-right: 38px; }
+    .pw-eye {
+      position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+      background: none; border: none; cursor: pointer; font-size: 15px;
+      color: var(--text-muted); padding: 2px;
+    }
+
+    /* ── Empty / loading states ──────────────────────────── */
+    .empty-state { text-align: center; padding: 32px 16px; color: var(--text-muted); font-size: 13.5px; }
+    .empty-state .empty-icon { font-size: 32px; margin-bottom: 8px; }
+
+    @keyframes shimmer { 0% { background-position: -600px 0; } 100% { background-position: 600px 0; } }
+    .skeleton {
+      background: linear-gradient(90deg,#e8edf3 25%,#f5f7fa 50%,#e8edf3 75%);
+      background-size: 1200px 100%; animation: shimmer 1.4s infinite;
+      border-radius: 4px; display: inline-block;
+    }
+
+    /* ── Print ────────────────────────────────────────────── */
+    @media print {
+      body * { visibility: hidden; }
+      #printAreaTT, #printAreaTT * { visibility: visible; }
+      #printAreaTT { position: absolute; top: 0; left: 0; width: 100%; padding: 24px; }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     SIDEBAR
+══════════════════════════════════════════════════════════ -->
+<aside class="sidebar teacher-theme" id="sidebar">
+  <div class="teacher-sidebar-card">
+    <div id="sidebarPhotoWrap"><div class="sc-avatar">?</div></div>
+    <div class="sc-name" id="sidebarName">Loading…</div>
+    <div class="sc-meta" id="sidebarMeta">—</div>
+  </div>
+
+  <ul class="sidebar-nav">
+    <li><a href="#" data-section="dashboard"     class="nav-link active">🏠 Dashboard</a></li>
+    <li><a href="#" data-section="timetable"      class="nav-link">📅 My Timetable</a></li>
+    <li><a href="#" data-section="marks"          class="nav-link">📝 Enter Marks</a></li>
+    <li><a href="#" data-section="students"       class="nav-link">👨‍🎓 My Students</a></li>
+    <li><a href="#" data-section="announcements"  class="nav-link">📢 Announcements</a></li>
+    <li><a href="#" data-section="password"       class="nav-link">🔑 Change Password</a></li>
+  </ul>
+
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color: rgba(255,255,255,.7);">
+      🚪 Logout
+    </a>
+  </div>
+</aside>
+
+<!-- ══════════════════════════════════════════════════════════
+     MAIN CONTENT
+══════════════════════════════════════════════════════════ -->
+<div class="main-content">
+
+  <!-- TOP HEADER -->
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title" id="headerTitle">Teacher Portal</h1>
+    </div>
+    <div class="header-right">
+      <div id="liveClock">Loading…</div>
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <!-- PAGE BODY -->
+  <main class="page-content" id="pageContent">
+
+    <!-- ══════════════ DASHBOARD ══════════════ -->
+    <section class="portal-section active" id="section-dashboard">
+
+      <div class="welcome-card" id="welcomeCard">
+        <div class="skeleton" style="width:72px;height:72px;border-radius:50%;"></div>
+        <div><h2>Loading…</h2></div>
+      </div>
+
+      <div class="stats-grid" id="dashStatsGrid">
+        <div class="stat-card"><div class="skeleton" style="width:60px;height:36px"></div></div>
+        <div class="stat-card"><div class="skeleton" style="width:60px;height:36px"></div></div>
+        <div class="stat-card"><div class="skeleton" style="width:60px;height:36px"></div></div>
+      </div>
+
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header">
+          <span class="card-title">📅 Today's Schedule — <span id="todayDayName">—</span></span>
+        </div>
+        <div class="card-body">
+          <div class="schedule-timeline" id="todayScheduleTimeline">
+            <div class="empty-state"><div class="skeleton" style="width:80%;height:16px;margin:0 auto 8px"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📢 Latest Announcements</span>
+          <a href="#" data-section="announcements" class="nav-link" style="font-size:13px;color:var(--primary);font-weight:500;text-decoration:none;">View All →</a>
+        </div>
+        <div class="card-body">
+          <div class="ann-grid" id="dashAnnGrid">
+            <div class="empty-state"><div class="skeleton" style="width:80%;height:16px;margin:0 auto 8px"></div></div>
+          </div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- ══════════════ MY TIMETABLE ══════════════ -->
+    <section class="portal-section" id="section-timetable">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">📅 My Timetable</span>
+          <button class="btn btn-outline btn-sm" id="printTTBtn">🖨️ Print</button>
+        </div>
+        <div class="card-body" style="padding:0;">
+          <div id="printAreaTT">
+            <div class="tt-grid-wrap" id="ttGridWrap">
+              <div class="empty-state"><div class="empty-icon">📅</div>Loading timetable…</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ ENTER MARKS ══════════════ -->
+    <section class="portal-section" id="section-marks">
+      <div class="card" style="margin-bottom:24px;">
+        <div class="card-header"><span class="card-title">📝 Enter Marks</span></div>
+        <div class="card-body">
+
+          <div class="marks-filter-row">
+            <div class="form-group">
+              <label for="marksClass">Class *</label>
+              <select id="marksClass" class="form-control">
+                <option value="">Select Class…</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="marksSection">Section *</label>
+              <select id="marksSection" class="form-control">
+                <option value="">Select Section…</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="marksSubject">Subject *</label>
+              <select id="marksSubject" class="form-control">
+                <option value="">Select Subject…</option>
+              </select>
+            </div>
+            <div class="form-group">
+              <label for="marksExamType">Exam Type *</label>
+              <select id="marksExamType" class="form-control">
+                <option value="">Select Exam…</option>
+                <option value="Unit Test 1">Unit Test 1</option>
+                <option value="Unit Test 2">Unit Test 2</option>
+                <option value="Half Yearly">Half Yearly</option>
+                <option value="Annual">Annual</option>
+              </select>
+            </div>
+            <div class="form-group" style="flex:0;">
+              <button class="btn btn-primary" id="loadStudentsBtn" style="white-space:nowrap;">Load Students</button>
+            </div>
+          </div>
+
+          <div id="marksEntryArea">
+            <div class="empty-state"><div class="empty-icon">📝</div>Select class, section, subject and exam type, then click "Load Students".</div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ MY STUDENTS ══════════════ -->
+    <section class="portal-section" id="section-students">
+      <div class="card">
+        <div class="card-header"><span class="card-title">👨‍🎓 My Students</span></div>
+        <div class="card-body">
+          <div class="student-select-row">
+            <div class="form-group">
+              <label for="studClassSelect">Select Class</label>
+              <select id="studClassSelect" class="form-control">
+                <option value="">Choose a class…</option>
+              </select>
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="erp-table">
+              <thead>
+                <tr>
+                  <th style="width:50px;">Photo</th>
+                  <th>Name</th>
+                  <th style="width:110px;">Admission No.</th>
+                  <th>Father's Name</th>
+                  <th style="width:130px;">Parent Phone</th>
+                  <th style="width:90px;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="myStudentsBody">
+                <tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👨‍🎓</div>Select a class to view students.</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ ANNOUNCEMENTS ══════════════ -->
+    <section class="portal-section" id="section-announcements">
+      <div class="card">
+        <div class="card-header"><span class="card-title">📢 All Announcements</span></div>
+        <div class="card-body">
+          <div class="ann-grid" id="fullAnnGrid">
+            <div class="empty-state"><div class="empty-icon">📢</div>Loading announcements…</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ══════════════ CHANGE PASSWORD ══════════════ -->
+    <section class="portal-section" id="section-password">
+      <div class="card pw-card">
+        <div class="card-header"><span class="card-title">🔑 Change Password</span></div>
+        <div class="card-body">
+          <div class="form-group">
+            <label for="curPassword">Current Password *</label>
+            <div class="pw-wrap">
+              <input type="password" id="curPassword" class="form-control" placeholder="Enter current password" autocomplete="current-password" />
+              <button class="pw-eye" type="button" data-target="curPassword">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="newPassword">New Password *</label>
+            <div class="pw-wrap">
+              <input type="password" id="newPassword" class="form-control" placeholder="Min. 6 characters" autocomplete="new-password" />
+              <button class="pw-eye" type="button" data-target="newPassword">👁</button>
+            </div>
+          </div>
+          <div class="form-group">
+            <label for="confirmPassword">Confirm New Password *</label>
+            <div class="pw-wrap">
+              <input type="password" id="confirmPassword" class="form-control" placeholder="Re-enter new password" autocomplete="new-password" />
+              <button class="pw-eye" type="button" data-target="confirmPassword">👁</button>
+            </div>
+          </div>
+          <button class="btn btn-primary" id="changePwBtn" style="margin-top:8px;">Update Password</button>
+        </div>
+      </div>
+    </section>
+
+  </main><!-- /page-content -->
+</div><!-- /main-content -->
+
+<!-- ══════════════════════════════════════════════════════════
+     VIEW STUDENT MODAL (read-only)
+══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="viewStudentModal">
+  <div class="modal-box" style="max-width:560px;">
+    <div class="modal-header">
+      <h3 class="card-title">👤 Student Profile</h3>
+      <button class="modal-close" id="closeViewStudentModal">✕</button>
+    </div>
+    <div class="profile-hero" id="studentViewHero"></div>
+    <div class="detail-grid" id="studentViewDetails"></div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="closeViewStudentBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  Boot
+// ════════════════════════════════════════════════════════════
+let teacherData = null;
+let teacherTimetable = [];     // raw timetable docs assigned to this teacher
+let allAnnouncements = [];
+let myStudentsCache = {};      // class -> students array
+let currentMarksStudents = []; // students loaded for current marks entry
+let existingMarksMap = {};     // studentId -> existing marks doc (locked check)
+
+checkTeacherAuth().then(user => { initTeacherPortal(user); });
+
+// ════════════════════════════════════════════════════════════
+//  Live clock
+// ════════════════════════════════════════════════════════════
+(function startClock() {
+  const el = document.getElementById('liveClock');
+  const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function tick() {
+    const d = new Date();
+    const day  = days[d.getDay()];
+    const date = String(d.getDate()).padStart(2,'0');
+    const mon  = months[d.getMonth()];
+    const yr   = d.getFullYear();
+    let   h    = d.getHours();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    el.textContent = `${day}, ${date} ${mon} ${yr} | ${String(h).padStart(2,'0')}:${mm}:${ss} ${ampm}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// ════════════════════════════════════════════════════════════
+//  Hamburger
+// ════════════════════════════════════════════════════════════
+document.getElementById('hamburger').addEventListener('click', function () {
+  document.getElementById('sidebar').classList.toggle('mobile-open');
+});
+
+// ════════════════════════════════════════════════════════════
+//  Sidebar navigation (section switching)
+// ════════════════════════════════════════════════════════════
+const sectionTitles = {
+  dashboard: 'Teacher Portal',
+  timetable: 'My Timetable',
+  marks: 'Enter Marks',
+  students: 'My Students',
+  announcements: 'Announcements',
+  password: 'Change Password'
+};
+
+document.querySelectorAll('.nav-link[data-section]').forEach(link => {
+  link.addEventListener('click', function (e) {
+    e.preventDefault();
+    const target = this.dataset.section;
+    switchSection(target);
+    document.getElementById('sidebar').classList.remove('mobile-open');
+  });
+});
+
+function switchSection(target) {
+  document.querySelectorAll('.nav-link[data-section]').forEach(l => {
+    l.classList.toggle('active', l.dataset.section === target);
+  });
+  document.querySelectorAll('.portal-section').forEach(s => {
+    s.classList.toggle('active', s.id === 'section-' + target);
+  });
+  document.getElementById('headerTitle').textContent = sectionTitles[target] || 'Teacher Portal';
+}
+
+// ════════════════════════════════════════════════════════════
+//  Helpers
+// ════════════════════════════════════════════════════════════
+function getInitials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0,2).join('');
+}
+
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function formatDate(val) {
+  if (!val) return '—';
+  if (val.toDate) val = val.toDate();
+  if (val instanceof Date) {
+    return val.toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
+  }
+  return String(val);
+}
+
+function priorityBadge(p) {
+  const map = { 'Urgent':'badge-danger', 'Important':'badge-warning', 'Normal':'badge-info' };
+  return `<span class="badge ${map[p] || 'badge-info'}">${escapeHtml(p||'Normal')}</span>`;
+}
+
+function gradeFromPercent(pct) {
+  if (pct >= 90) return 'A+';
+  if (pct >= 80) return 'A';
+  if (pct >= 70) return 'B+';
+  if (pct >= 60) return 'B';
+  if (pct >= 50) return 'C';
+  if (pct >= 40) return 'D';
+  return 'F';
+}
+
+// Standard period start-times used to render the "8:00 AM" style labels.
+// Adjust here if the school's actual bell schedule differs.
+const PERIOD_TIMES = {
+  1: '8:00 AM', 2: '8:45 AM', 3: '9:30 AM', 4: '10:15 AM',
+  5: '11:15 AM', 6: '12:00 PM', 7: '12:45 PM', 8: '1:30 PM'
+};
+function periodTimeLabel(period) {
+  return PERIOD_TIMES[period] || '—';
+}
+
+// ════════════════════════════════════════════════════════════
+//  Init
+// ════════════════════════════════════════════════════════════
+async function initTeacherPortal(user) {
+  try {
+    const doc = await db.collection('teachers').doc(user.uid).get();
+    if (!doc.exists) {
+      showToast('Could not find your teacher record.', 'error');
+      return;
+    }
+    teacherData = { id: doc.id, ...doc.data() };
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to load your profile.', 'error');
+    return;
+  }
+
+  const t = teacherData;
+
+  // ── School name ───────────────────────────────────────────
+  db.collection('settings').doc('schoolConfig').get().then(cfgDoc => {
+    if (cfgDoc.exists && cfgDoc.data().schoolName) {
+      document.title = `Teacher Portal — ${cfgDoc.data().schoolName}`;
+    }
+  }).catch(() => {});
+
+  // ── Sidebar card ─────────────────────────────────────────
+  const photoWrap = document.getElementById('sidebarPhotoWrap');
+  photoWrap.innerHTML = t.photoUrl
+    ? `<img src="${escapeHtml(t.photoUrl)}" alt="${escapeHtml(t.name)}" />`
+    : `<div class="sc-avatar">${getInitials(t.name)}</div>`;
+  document.getElementById('sidebarName').textContent = t.name || 'Teacher';
+  document.getElementById('sidebarMeta').textContent = t.subject || 'Teacher';
+
+  // ── Header ───────────────────────────────────────────────
+  document.getElementById('headerUserName').textContent = t.name || user.email || 'Teacher';
+  document.getElementById('headerAvatar').textContent   = getInitials(t.name || user.email);
+
+  // ── Welcome card ─────────────────────────────────────────
+  const photoHtml = t.photoUrl
+    ? `<img src="${escapeHtml(t.photoUrl)}" alt="${escapeHtml(t.name)}" />`
+    : `<div class="wc-avatar">${getInitials(t.name)}</div>`;
+  const firstName = (t.name || 'Teacher').split(' ')[0];
+  document.getElementById('welcomeCard').innerHTML = `
+    ${photoHtml}
+    <div>
+      <h2>Hello, ${escapeHtml(firstName)}! 👋</h2>
+      <div class="wc-meta">
+        <span>📘 ${escapeHtml(t.subject || '—')}</span>
+        <span>🆔 ${escapeHtml(t.employeeId || '—')}</span>
+      </div>
+    </div>`;
+
+  // ── Load teacher's timetable (used by dashboard, timetable view, marks dropdowns) ──
+  await loadTeacherTimetable(t);
+
+  renderTodaySchedule();
+  renderDashStats(t);
+  renderFullTimetable();
+  buildMarksDropdowns();
+  buildStudentClassDropdown();
+  loadAnnouncements();
+}
+
+// ════════════════════════════════════════════════════════════
+//  TEACHER TIMETABLE (shared base data)
+// ════════════════════════════════════════════════════════════
+async function loadTeacherTimetable(t) {
+  try {
+    const snap = await db.collection('timetable').where('teacherId', '==', t.id).get();
+    teacherTimetable = [];
+    snap.forEach(d => teacherTimetable.push({ id: d.id, ...d.data() }));
+  } catch (err) {
+    console.error(err);
+    teacherTimetable = [];
+  }
+}
+
+// Unique {class, section} combos this teacher is assigned to
+function getAssignedClassSections() {
+  const map = {};
+  teacherTimetable.forEach(tt => {
+    const cls = tt.classId || tt.className || tt.class || '';
+    const sec = tt.section || '';
+    if (!cls) return;
+    const key = cls + '|' + sec;
+    if (!map[key]) map[key] = { class: cls, section: sec };
+  });
+  return Object.values(map);
+}
+
+function getAssignedSubjects() {
+  const set = new Set();
+  teacherTimetable.forEach(tt => {
+    const subj = tt.subject || teacherData.subject;
+    if (subj) set.add(subj);
+  });
+  return [...set];
+}
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD — Today's schedule
+// ════════════════════════════════════════════════════════════
+const DAY_NAMES = ['Sunday','Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+function renderTodaySchedule() {
+  const todayName = DAY_NAMES[new Date().getDay()];
+  document.getElementById('todayDayName').textContent = todayName;
+
+  const wrap = document.getElementById('todayScheduleTimeline');
+  const todays = teacherTimetable
+    .filter(tt => (tt.day || '') === todayName)
+    .sort((a,b) => (a.period||0) - (b.period||0));
+
+  if (!todays.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">🎉</div>No classes today 🎉</div>`;
+    return;
+  }
+
+  wrap.innerHTML = todays.map(tt => {
+    const cls = tt.classId || tt.className || tt.class || '—';
+    const sec = tt.section ? tt.section : '';
+    const subj = tt.subject || teacherData.subject || '—';
+    return `
+      <div class="schedule-item">
+        <span class="schedule-item__period">Period ${tt.period || '—'}</span>
+        <span class="schedule-item__time">${periodTimeLabel(tt.period)}</span>
+        <div class="schedule-item__details">
+          <div class="schedule-item__class">Class ${escapeHtml(cls)}${sec ? escapeHtml(sec) : ''}</div>
+          <div class="schedule-item__subject">${escapeHtml(subj)}</div>
+        </div>
+      </div>`;
+  }).join('');
+}
+
+// ════════════════════════════════════════════════════════════
+//  DASHBOARD — Stats
+// ════════════════════════════════════════════════════════════
+async function renderDashStats(t) {
+  const grid = document.getElementById('dashStatsGrid');
+  const assigned = getAssignedClassSections();
+  const subjects = getAssignedSubjects();
+
+  grid.innerHTML = `
+    <div class="stat-card info">
+      <div>
+        <div class="stat-number">${assigned.length}</div>
+        <div class="stat-label">Classes Assigned</div>
+      </div>
+      <div class="stat-icon">📚</div>
+    </div>
+    <div class="stat-card success" id="statTotalStudents">
+      <div>
+        <div class="stat-number" id="statTotalStudentsVal"><span class="skeleton" style="width:40px;height:36px;display:inline-block;"></span></div>
+        <div class="stat-label">Total Students Taught</div>
+      </div>
+      <div class="stat-icon">👨‍🎓</div>
+    </div>
+    <div class="stat-card warning">
+      <div>
+        <div class="stat-number">${subjects.length || (t.subject ? 1 : 0)}</div>
+        <div class="stat-label">Subjects</div>
+      </div>
+      <div class="stat-icon">📘</div>
+    </div>
+  `;
+
+  // Count total unique students across assigned class/sections
+  try {
+    if (!assigned.length) {
+      document.getElementById('statTotalStudentsVal').textContent = '0';
+      return;
+    }
+    let total = 0;
+    const seen = new Set();
+    for (const cs of assigned) {
+      let q = db.collection('students').where('class', '==', cs.class);
+      if (cs.section) q = q.where('section', '==', cs.section);
+      const snap = await q.get();
+      snap.forEach(d => { if (!seen.has(d.id)) { seen.add(d.id); total++; } });
+    }
+    document.getElementById('statTotalStudentsVal').textContent = total;
+  } catch (err) {
+    console.error(err);
+    document.getElementById('statTotalStudentsVal').textContent = '—';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  ANNOUNCEMENTS (teachers + all)
+// ════════════════════════════════════════════════════════════
+function announcementMatchesTeacher(a) {
+  return a.target === 'All' || a.target === 'Teachers Only';
+}
+
+function renderAnnCard(d) {
+  const date = d.postedDate
+    ? (d.postedDate.toDate ? d.postedDate.toDate().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' }) : d.postedDate)
+    : '—';
+  return `
+    <div class="ann-card">
+      <div class="ann-card__top">
+        ${priorityBadge(d.priority || 'Normal')}
+        ${d.pinned ? '<span class="badge badge-warning">📌 Pinned</span>' : ''}
+        <span class="ann-card__title">${escapeHtml(d.title || 'Untitled')}</span>
+      </div>
+      <div class="ann-card__msg">${escapeHtml(d.message || '')}</div>
+      <div class="ann-card__date">${date}</div>
+    </div>`;
+}
+
+function loadAnnouncements() {
+  db.collection('announcements').orderBy('postedDate', 'desc').limit(50)
+    .onSnapshot(snap => {
+      allAnnouncements = [];
+      snap.forEach(d => allAnnouncements.push({ id: d.id, ...d.data() }));
+      const relevant = allAnnouncements.filter(announcementMatchesTeacher);
+
+      const dashGrid = document.getElementById('dashAnnGrid');
+      dashGrid.innerHTML = relevant.length
+        ? relevant.slice(0, 2).map(renderAnnCard).join('')
+        : `<div class="empty-state"><div class="empty-icon">📢</div>No announcements yet.</div>`;
+
+      const fullGrid = document.getElementById('fullAnnGrid');
+      fullGrid.innerHTML = relevant.length
+        ? relevant.map(renderAnnCard).join('')
+        : `<div class="empty-state"><div class="empty-icon">📢</div>No announcements yet.</div>`;
+    }, () => {
+      document.getElementById('dashAnnGrid').innerHTML = `<div class="empty-state">Could not load announcements.</div>`;
+      document.getElementById('fullAnnGrid').innerHTML = `<div class="empty-state">Could not load announcements.</div>`;
+    });
+}
+
+// ════════════════════════════════════════════════════════════
+//  MY TIMETABLE (full weekly grid, read-only)
+// ════════════════════════════════════════════════════════════
+const DAY_ORDER = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday'];
+
+function renderFullTimetable() {
+  const wrap = document.getElementById('ttGridWrap');
+  if (!teacherTimetable.length) {
+    wrap.innerHTML = `<div class="empty-state"><div class="empty-icon">📅</div>No timetable assigned yet.</div>`;
+    return;
+  }
+
+  const byDay = {};
+  let maxPeriod = 0;
+  teacherTimetable.forEach(tt => {
+    const day = tt.day || 'Unknown';
+    const period = Number(tt.period || 0);
+    maxPeriod = Math.max(maxPeriod, period);
+    if (!byDay[day]) byDay[day] = {};
+    byDay[day][period] = tt;
+  });
+
+  const days = DAY_ORDER.filter(d => byDay[d]);
+  const periods = Array.from({ length: maxPeriod }, (_, i) => i + 1);
+
+  let html = `<table class="tt-grid"><thead><tr><th>Day / Period</th>`;
+  periods.forEach(p => { html += `<th>Period ${p}<br><span style="font-weight:400;opacity:.85;">${periodTimeLabel(p)}</span></th>`; });
+  html += `</tr></thead><tbody>`;
+  days.forEach(day => {
+    html += `<tr><td class="day-label">${escapeHtml(day)}</td>`;
+    periods.forEach(p => {
+      const cell = byDay[day][p];
+      const cls = cell ? (cell.classId || cell.className || cell.class || '—') : '';
+      const sec = cell ? (cell.section || '') : '';
+      const subj = cell ? (cell.subject || teacherData.subject || '—') : '';
+      html += `<td>${cell
+        ? `<div class="tt-cell-content">Class ${escapeHtml(cls)}${escapeHtml(sec)}<br><span style="font-weight:400;opacity:.85;">${escapeHtml(subj)}</span></div>`
+        : `<span class="tt-cell-empty">—</span>`}</td>`;
+    });
+    html += `</tr>`;
+  });
+  html += `</tbody></table>`;
+  wrap.innerHTML = html;
+}
+
+document.getElementById('printTTBtn').addEventListener('click', () => window.print());
+
+// ════════════════════════════════════════════════════════════
+//  ENTER MARKS
+// ════════════════════════════════════════════════════════════
+function buildMarksDropdowns() {
+  const assigned = getAssignedClassSections();
+  const classSel = document.getElementById('marksClass');
+  const uniqueClasses = [...new Set(assigned.map(a => a.class))];
+  classSel.innerHTML = '<option value="">Select Class…</option>' +
+    uniqueClasses.map(c => `<option value="${escapeHtml(c)}">${c.startsWith && c.startsWith('KG') ? escapeHtml(c) : 'Class ' + escapeHtml(c)}</option>`).join('');
+
+  classSel.addEventListener('change', () => {
+    const cls = classSel.value;
+    const sections = assigned.filter(a => a.class === cls).map(a => a.section).filter(Boolean);
+    const secSel = document.getElementById('marksSection');
+    secSel.innerHTML = '<option value="">Select Section…</option>' +
+      [...new Set(sections)].map(s => `<option value="${escapeHtml(s)}">Section ${escapeHtml(s)}</option>`).join('');
+  });
+
+  const subjSel = document.getElementById('marksSubject');
+  const subjects = getAssignedSubjects();
+  subjSel.innerHTML = '<option value="">Select Subject…</option>' +
+    subjects.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+}
+
+document.getElementById('loadStudentsBtn').addEventListener('click', loadStudentsForMarks);
+
+async function loadStudentsForMarks() {
+  const cls = document.getElementById('marksClass').value;
+  const sec = document.getElementById('marksSection').value;
+  const subj = document.getElementById('marksSubject').value;
+  const examType = document.getElementById('marksExamType').value;
+  const area = document.getElementById('marksEntryArea');
+
+  if (!cls || !sec || !subj || !examType) {
+    showToast('Please select class, section, subject and exam type.', 'error');
+    return;
+  }
+
+  area.innerHTML = `<div class="empty-state"><div class="empty-icon">⏳</div>Loading students…</div>`;
+
+  try {
+    let q = db.collection('students').where('class', '==', cls).where('section', '==', sec);
+    const snap = await q.get();
+    currentMarksStudents = [];
+    snap.forEach(d => currentMarksStudents.push({ id: d.id, ...d.data() }));
+    currentMarksStudents.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+
+    if (!currentMarksStudents.length) {
+      area.innerHTML = `<div class="empty-state"><div class="empty-icon">👨‍🎓</div>No students found in Class ${escapeHtml(cls)}${escapeHtml(sec)}.</div>`;
+      return;
+    }
+
+    // Check which students already have marks for this exam+subject (locked)
+    const marksSnap = await db.collection('marks')
+      .where('class', '==', cls).where('section', '==', sec)
+      .where('subject', '==', subj).where('examName', '==', examType)
+      .get();
+    existingMarksMap = {};
+    marksSnap.forEach(d => {
+      const m = d.data();
+      if (m.studentId) existingMarksMap[m.studentId] = { id: d.id, ...m };
+    });
+
+    renderMarksEntryTable(cls, sec, subj, examType);
+  } catch (err) {
+    console.error(err);
+    area.innerHTML = `<div class="empty-state">⚠️ Could not load students.</div>`;
+  }
+}
+
+function renderMarksEntryTable(cls, sec, subj, examType) {
+  const area = document.getElementById('marksEntryArea');
+
+  const rows = currentMarksStudents.map(s => {
+    const existing = existingMarksMap[s.id];
+    const locked = !!existing;
+    const photo = s.photoUrl
+      ? `<img class="st-avatar" src="${escapeHtml(s.photoUrl)}" alt="" />`
+      : `<div class="avatar-initials">${getInitials(s.name)}</div>`;
+
+    if (locked) {
+      const obtained = existing.marksObtained ?? existing.marks ?? '—';
+      const max = existing.maxMarks || 100;
+      const grade = existing.grade || (max ? gradeFromPercent(Math.round((Number(obtained)/max)*100)) : '—');
+      return `<tr data-student-id="${s.id}">
+        <td>${photo}</td>
+        <td>${escapeHtml(s.name||'—')}</td>
+        <td>${escapeHtml(s.admissionNo||'—')}</td>
+        <td>${obtained}</td>
+        <td>${max}</td>
+        <td>${escapeHtml(grade)}</td>
+        <td><span class="locked-badge">🔒 Submitted — Contact admin to edit</span></td>
+      </tr>`;
+    }
+
+    return `<tr data-student-id="${s.id}">
+      <td>${photo}</td>
+      <td>${escapeHtml(s.name||'—')}</td>
+      <td>${escapeHtml(s.admissionNo||'—')}</td>
+      <td><input type="number" class="form-control marks-input obtained-input" min="0" placeholder="0" /></td>
+      <td><input type="number" class="form-control marks-input max-input" min="1" value="100" /></td>
+      <td><input type="text" class="form-control marks-input remarks-input" placeholder="Optional" style="width:140px;" /></td>
+      <td><span style="color:var(--success);font-size:12px;">✏️ Editable</span></td>
+    </tr>`;
+  }).join('');
+
+  area.innerHTML = `
+    <div style="margin-bottom:14px;display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+      <span class="badge badge-primary">Class ${escapeHtml(cls)}${escapeHtml(sec)}</span>
+      <span class="badge badge-info">${escapeHtml(subj)}</span>
+      <span class="badge badge-warning">${escapeHtml(examType)}</span>
+      <span style="font-size:13px;color:var(--text-muted);">${currentMarksStudents.length} student(s)</span>
+    </div>
+    <div class="table-wrapper">
+      <table class="erp-table">
+        <thead>
+          <tr>
+            <th style="width:50px;">Photo</th>
+            <th>Name</th>
+            <th style="width:110px;">Admission No.</th>
+            <th style="width:110px;">Obtained</th>
+            <th style="width:90px;">Max Marks</th>
+            <th>Remarks</th>
+            <th style="width:160px;">Status</th>
+          </tr>
+        </thead>
+        <tbody id="marksRowsBody">${rows}</tbody>
+      </table>
+    </div>
+    <div style="margin-top:16px;display:flex;justify-content:flex-end;">
+      <button class="btn btn-primary" id="saveMarksBtn">💾 Save All Marks</button>
+    </div>
+  `;
+
+  document.getElementById('saveMarksBtn').addEventListener('click', () => saveAllMarks(cls, sec, subj, examType));
+}
+
+async function saveAllMarks(cls, sec, subj, examType) {
+  const btn = document.getElementById('saveMarksBtn');
+  const rows = document.querySelectorAll('#marksRowsBody tr');
+  const toSave = [];
+
+  rows.forEach(row => {
+    const studentId = row.dataset.studentId;
+    if (existingMarksMap[studentId]) return; // locked, skip
+    const obtainedInput = row.querySelector('.obtained-input');
+    if (!obtainedInput) return; // already locked row has no input
+    const obtained = obtainedInput.value.trim();
+    const max = row.querySelector('.max-input').value.trim();
+    const remarks = row.querySelector('.remarks-input').value.trim();
+    if (obtained === '') return; // skip blanks — teacher didn't enter a mark for this student
+    toSave.push({ studentId, obtained: Number(obtained), max: Number(max || 100), remarks });
+  });
+
+  if (!toSave.length) {
+    showToast('No new marks to save. Enter marks for at least one student.', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const batchPromises = toSave.map(entry => {
+      const student = currentMarksStudents.find(s => s.id === entry.studentId);
+      const pct = entry.max ? Math.round((entry.obtained / entry.max) * 100) : 0;
+      return db.collection('marks').add({
+        studentId: entry.studentId,
+        studentName: student ? student.name : '',
+        class: cls,
+        section: sec,
+        subject: subj,
+        examName: examType,
+        marksObtained: entry.obtained,
+        maxMarks: entry.max,
+        grade: gradeFromPercent(pct),
+        remarks: entry.remarks,
+        examDate: firebase.firestore.FieldValue.serverTimestamp(),
+        enteredBy: (window.currentUser && window.currentUser.name) ? window.currentUser.name : 'Teacher',
+        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+      });
+    });
+
+    await Promise.all(batchPromises);
+    await logActivity(`Marks entered: ${subj} (${examType}) — Class ${cls}${sec} — ${toSave.length} student(s) by ${teacherData.name}`);
+    showToast(`Marks saved for ${toSave.length} student(s)!`, 'success');
+
+    // Reload to show locked state for newly-saved entries
+    await loadStudentsForMarks();
+  } catch (err) {
+    console.error(err);
+    showToast('Failed to save marks. Please try again.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Save All Marks';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  MY STUDENTS (read-only)
+// ════════════════════════════════════════════════════════════
+function buildStudentClassDropdown() {
+  const assigned = getAssignedClassSections();
+  const sel = document.getElementById('studClassSelect');
+  sel.innerHTML = '<option value="">Choose a class…</option>' +
+    assigned.map(a => {
+      const label = `${a.class.startsWith && a.class.startsWith('KG') ? a.class : 'Class ' + a.class}${a.section ? ' - ' + a.section : ''}`;
+      return `<option value="${escapeHtml(a.class)}|${escapeHtml(a.section)}">${label}</option>`;
+    }).join('');
+
+  sel.addEventListener('change', () => {
+    if (!sel.value) {
+      document.getElementById('myStudentsBody').innerHTML =
+        `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👨‍🎓</div>Select a class to view students.</div></td></tr>`;
+      return;
+    }
+    const [cls, sec] = sel.value.split('|');
+    loadMyStudents(cls, sec);
+  });
+}
+
+async function loadMyStudents(cls, sec) {
+  const body = document.getElementById('myStudentsBody');
+  body.innerHTML = `<tr><td colspan="6"><div class="empty-state">⏳ Loading students…</div></td></tr>`;
+
+  const cacheKey = cls + '|' + sec;
+  try {
+    let list;
+    if (myStudentsCache[cacheKey]) {
+      list = myStudentsCache[cacheKey];
+    } else {
+      let q = db.collection('students').where('class', '==', cls);
+      if (sec) q = q.where('section', '==', sec);
+      const snap = await q.get();
+      list = [];
+      snap.forEach(d => list.push({ id: d.id, ...d.data() }));
+      list.sort((a,b) => (a.name||'').localeCompare(b.name||''));
+      myStudentsCache[cacheKey] = list;
+    }
+
+    if (!list.length) {
+      body.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="empty-icon">👨‍🎓</div>No students found in this class.</div></td></tr>`;
+      return;
+    }
+
+    body.innerHTML = list.map(s => {
+      const photo = s.photoUrl
+        ? `<img class="st-avatar" src="${escapeHtml(s.photoUrl)}" alt="" />`
+        : `<div class="avatar-initials">${getInitials(s.name)}</div>`;
+      return `<tr>
+        <td>${photo}</td>
+        <td style="font-weight:600;">${escapeHtml(s.name||'—')}</td>
+        <td style="font-size:12.5px;color:var(--text-muted);">${escapeHtml(s.admissionNo||'—')}</td>
+        <td>${escapeHtml(s.fatherName||'—')}</td>
+        <td style="font-size:13px;">${escapeHtml(s.phone||s.altPhone||'—')}</td>
+        <td><button class="btn btn-sm btn-outline btn-icon" title="View" onclick="viewMyStudent('${s.id}','${cacheKey}')">👁</button></td>
+      </tr>`;
+    }).join('');
+  } catch (err) {
+    console.error(err);
+    body.innerHTML = `<tr><td colspan="6"><div class="empty-state">⚠️ Could not load students.</div></td></tr>`;
+  }
+}
+
+window.viewMyStudent = function (studentId, cacheKey) {
+  const list = myStudentsCache[cacheKey] || [];
+  const s = list.find(x => x.id === studentId);
+  if (!s) return;
+
+  const stClass = s.class || s.className || '';
+  const photo = s.photoUrl
+    ? `<img src="${escapeHtml(s.photoUrl)}" alt="${escapeHtml(s.name)}" />`
+    : `<div class="avatar-lg">${getInitials(s.name)}</div>`;
+
+  document.getElementById('studentViewHero').innerHTML = `
+    ${photo}
+    <div>
+      <div class="profile-name">${escapeHtml(s.name||'—')}</div>
+      <div class="profile-meta">${escapeHtml(s.admissionNo||'')} · ${stClass ? 'Class '+escapeHtml(stClass) : ''}${s.section?' '+escapeHtml(s.section):''}</div>
+      <div class="profile-badges">
+        ${s.gender ? `<span class="badge badge-info">${escapeHtml(s.gender)}</span>` : ''}
+        ${s.bloodGroup ? `<span class="badge badge-warning">${escapeHtml(s.bloodGroup)}</span>` : ''}
+      </div>
+    </div>`;
+
+  const f = (label, val) => `<div class="detail-field"><label>${label}</label><span>${escapeHtml(val||'—')}</span></div>`;
+  document.getElementById('studentViewDetails').innerHTML = `
+    ${f('Date of Birth', s.dob ? formatDate(s.dob) : null)}
+    ${f('Class', stClass)}
+    ${f('Section', s.section)}
+    <div class="detail-field" style="grid-column:1/-1;"><label>Father</label><span>${escapeHtml(s.fatherName||'—')} ${s.fatherOcc?'('+escapeHtml(s.fatherOcc)+')':''}</span></div>
+    <div class="detail-field" style="grid-column:1/-1;"><label>Mother</label><span>${escapeHtml(s.motherName||'—')} ${s.motherOcc?'('+escapeHtml(s.motherOcc)+')':''}</span></div>
+    ${f('Primary Phone', s.phone)}
+    ${f('WhatsApp', s.whatsapp)}
+    ${f('Parent Email', s.parentEmail)}
+    ${f('Alt. Phone', s.altPhone)}
+    <div class="detail-field" style="grid-column:1/-1;">${f('Address', [s.address, s.city, s.state, s.pincode].filter(Boolean).join(', '))}</div>
+  `;
+
+  document.getElementById('viewStudentModal').classList.add('active');
+};
+
+const viewStudentModal = document.getElementById('viewStudentModal');
+function closeViewStudentModal() { viewStudentModal.classList.remove('active'); }
+document.getElementById('closeViewStudentModal').addEventListener('click', closeViewStudentModal);
+document.getElementById('closeViewStudentBtn').addEventListener('click', closeViewStudentModal);
+viewStudentModal.addEventListener('click', e => { if (e.target === viewStudentModal) closeViewStudentModal(); });
+
+// ════════════════════════════════════════════════════════════
+//  CHANGE PASSWORD
+// ════════════════════════════════════════════════════════════
+document.querySelectorAll('.pw-eye').forEach(btn => {
+  btn.addEventListener('click', function () {
+    const inp = document.getElementById(this.dataset.target);
+    const visible = inp.type === 'text';
+    inp.type = visible ? 'password' : 'text';
+    this.textContent = visible ? '👁' : '🙈';
+  });
+});
+
+document.getElementById('changePwBtn').addEventListener('click', async function () {
+  const curPw  = document.getElementById('curPassword').value;
+  const newPw  = document.getElementById('newPassword').value;
+  const confPw = document.getElementById('confirmPassword').value;
+
+  if (!curPw || !newPw || !confPw) {
+    showToast('All fields are required.', 'error');
+    return;
+  }
+  if (newPw.length < 6) {
+    showToast('New password must be at least 6 characters.', 'error');
+    return;
+  }
+  if (newPw !== confPw) {
+    showToast('New password and confirmation do not match.', 'error');
+    return;
+  }
+
+  this.disabled = true;
+  this.textContent = 'Updating…';
+
+  try {
+    const user = firebase.auth().currentUser;
+    const credential = firebase.auth.EmailAuthProvider.credential(user.email, curPw);
+    await user.reauthenticateWithCredential(credential);
+    await user.updatePassword(newPw);
+
+    document.getElementById('curPassword').value = '';
+    document.getElementById('newPassword').value = '';
+    document.getElementById('confirmPassword').value = '';
+    showToast('Password updated successfully!', 'success');
+  } catch (err) {
+    console.error(err);
+    const msgs = {
+      'auth/wrong-password': 'Current password is incorrect.',
+      'auth/weak-password': 'New password is too weak (min 6 characters).',
+      'auth/too-many-requests': 'Too many attempts. Please try again later.',
+    };
+    showToast(msgs[err.code] || err.message || 'Failed to update password.', 'error');
+  } finally {
+    this.disabled = false;
+    this.textContent = 'Update Password';
+  }
+});
+</script>
+</body>
+</html>
