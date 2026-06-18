@@ -943,8 +943,10 @@ async function loadStudentsForMarks() {
 
     // Check which students already have marks for this exam+subject (locked)
     const marksSnap = await db.collection('marks')
-      .where('class', '==', cls).where('section', '==', sec)
-      .where('subject', '==', subj).where('examName', '==', examType)
+      .where('class', '==', cls)
+      .where('section', '==', sec)
+      .where('subject', '==', subj)
+      .where('examType', '==', examType)
       .get();
     existingMarksMap = {};
     marksSnap.forEach(d => {
@@ -1052,7 +1054,7 @@ async function saveAllMarks(cls, sec, subj, examType) {
   btn.textContent = 'Saving…';
 
   try {
-    const batchPromises = toSave.map(entry => {
+  const batchPromises = toSave.map(entry => {
       const student = currentMarksStudents.find(s => s.id === entry.studentId);
       const pct = entry.max ? Math.round((entry.obtained / entry.max) * 100) : 0;
       return db.collection('marks').add({
@@ -1061,14 +1063,13 @@ async function saveAllMarks(cls, sec, subj, examType) {
         class: cls,
         section: sec,
         subject: subj,
-        examName: examType,
+        examType: examType,
         marksObtained: entry.obtained,
         maxMarks: entry.max,
         grade: gradeFromPercent(pct),
         remarks: entry.remarks,
-        examDate: firebase.firestore.FieldValue.serverTimestamp(),
-        enteredBy: (window.currentUser && window.currentUser.name) ? window.currentUser.name : 'Teacher',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
+        enteredBy: teacherData.name || 'Teacher',
+        enteredAt: firebase.firestore.FieldValue.serverTimestamp()
       });
     });
 
@@ -1232,9 +1233,11 @@ document.getElementById('changePwBtn').addEventListener('click', async function 
 
   try {
     const user = firebase.auth().currentUser;
-    const credential = firebase.auth.EmailAuthProvider.credential(user.email, curPw);
-    await user.reauthenticateWithCredential(credential);
-    await user.updatePassword(newPw);
+   const currentUser = firebase.auth().currentUser;
+if (!currentUser) throw new Error('Not logged in');
+const credential = firebase.auth.EmailAuthProvider.credential(currentUser.email, curPw);
+await currentUser.reauthenticateWithCredential(credential);
+await currentUser.updatePassword(newPw);
 
     document.getElementById('curPassword').value = '';
     document.getElementById('newPassword').value = '';

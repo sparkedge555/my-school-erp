@@ -52,50 +52,45 @@
    * @param {string} folder - Cloudinary folder to store the asset in.
    * @returns {Promise<string>} The secure_url of the uploaded asset.
    */
-  window.uploadToCloudinary = async function (file, folder) {
-    if (!file) {
-      throw new Error('uploadToCloudinary: no file provided');
-    }
+ window.uploadToCloudinary = async function (file, folder) {
+  if (!file) throw new Error('No file provided');
 
-    const url = `https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD}/image/upload`;
+  // Validate file size (max 5MB)
+  if (file.size > 5 * 1024 * 1024) {
+    throw new Error('File too large. Maximum size is 5MB.');
+  }
 
-    const formData = new FormData();
-    formData.append('file', file);
-    formData.append('upload_preset', window.CLOUDINARY_PRESET);
-    if (folder) {
-      formData.append('folder', folder);
-    }
+  const url = `https://api.cloudinary.com/v1_1/${window.CLOUDINARY_CLOUD}/auto/upload`;
 
-    let response;
-    try {
-      response = await fetch(url, {
-        method: 'POST',
-        body: formData
-      });
-    } catch (networkErr) {
-      throw new Error('Cloudinary upload failed: network error - ' + networkErr.message);
-    }
+  const formData = new FormData();
+  formData.append('file', file);
+  formData.append('upload_preset', window.CLOUDINARY_PRESET);
+  if (folder) formData.append('folder', folder);
+
+  try {
+    const response = await fetch(url, {
+      method: 'POST',
+      body: formData
+      // DO NOT set Content-Type header — browser sets it with boundary automatically
+    });
 
     if (!response.ok) {
-      let errMsg = `Cloudinary upload failed with status ${response.status}`;
-      try {
-        const errBody = await response.json();
-        if (errBody && errBody.error && errBody.error.message) {
-          errMsg = 'Cloudinary upload failed: ' + errBody.error.message;
-        }
-      } catch (_) {
-        // ignore JSON parse errors on error body
-      }
-      throw new Error(errMsg);
+      const errBody = await response.text();
+      console.error('Cloudinary error response:', errBody);
+      throw new Error(`Upload failed (${response.status}). Check your upload preset is set to "Unsigned" in Cloudinary dashboard.`);
     }
 
     const data = await response.json();
-    if (!data || !data.secure_url) {
-      throw new Error('Cloudinary upload failed: no secure_url returned');
-    }
-
+    if (!data.secure_url) throw new Error('No URL returned from Cloudinary');
     return data.secure_url;
-  };
+
+  } catch (networkErr) {
+    if (networkErr.message.includes('Failed to fetch')) {
+      throw new Error('Network error uploading image. Check internet connection.');
+    }
+    throw networkErr;
+  }
+};
 
   // ------------------------------------------------------------------------
   // 3. Toast notifications

@@ -975,23 +975,33 @@ document.getElementById('saveStudentBtn').addEventListener('click', async functi
     };
 
     if (!editMode) {
-      const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
-      const uid  = cred.user.uid;
-      data.uid          = uid;
-      data.status       = 'active';
-      data.feeStatus    = 'pending';
-      data.academicYear = '2024-25';
-      data.createdAt    = firebase.firestore.FieldValue.serverTimestamp();
+    // Use a secondary Firebase app to create users without affecting admin session
+let secondaryApp;
+try {
+  secondaryApp = firebase.app('secondary');
+} catch(e) {
+  secondaryApp = firebase.initializeApp(firebase.app().options, 'secondary');
+}
+const secondaryAuth = secondaryApp.auth();
+const cred = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+const uid  = cred.user.uid;
+await secondaryAuth.signOut(); // immediately sign out secondary app
 
-      await db.collection('students').doc(uid).set(data);
-      await db.collection('users').doc(uid).set({
-        uid, email, name, role: 'student',
-        class: stClass, section, admissionNo: admNo,
-        status: 'active',
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
-      await logActivity('Student enrolled: ' + name + ' | ' + admNo);
-      showToast('Student enrolled successfully!', 'success');
+data.uid          = uid;
+data.status       = 'active';
+data.feeStatus    = 'pending';
+data.academicYear = '2024-25';
+data.createdAt    = firebase.firestore.FieldValue.serverTimestamp();
+
+await db.collection('students').doc(uid).set(data);
+await db.collection('users').doc(uid).set({
+  uid, email, name, role: 'student',
+  class: stClass, section, admissionNo: admNo,
+  status: 'active',
+  createdAt: firebase.firestore.FieldValue.serverTimestamp()
+});
+await logActivity('Student enrolled: ' + name + ' | ' + admNo);
+showToast('Student enrolled successfully!', 'success');
     } else {
       delete data.email;
       await db.collection('students').doc(editDocId).update(data);
@@ -1139,8 +1149,8 @@ async function loadFeeHistory(uid) {
 async function loadMarks(uid) {
   const panel = document.getElementById('vMarks');
   try {
-    const snap = await db.collection('marks').where('studentId','==', uid)
-      .orderBy('examDate','desc').get();
+   const snap = await db.collection('marks').where('studentId','==', uid)
+  .orderBy('enteredAt','desc').get();
     if (snap.empty) {
       panel.innerHTML = `<div class="sub-empty">📝 No marks records found.</div>`; return;
     }

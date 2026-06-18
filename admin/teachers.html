@@ -759,17 +759,26 @@ document.getElementById('saveTeacherBtn').addEventListener('click', async functi
 
     if (!editMode) {
       // CREATE: Firebase Auth account first
-      const credential = await firebase.auth().createUserWithEmailAndPassword(email, password);
-      const uid = credential.user.uid;
-      teacherData.uid       = uid;
-      teacherData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+     let secondaryApp;
+try {
+  secondaryApp = firebase.app('secondary');
+} catch(e) {
+  secondaryApp = firebase.initializeApp(firebase.app().options, 'secondary');
+}
+const secondaryAuth = secondaryApp.auth();
+const credential = await secondaryAuth.createUserWithEmailAndPassword(email, password);
+const uid = credential.user.uid;
+await secondaryAuth.signOut();
 
-      await db.collection('teachers').doc(uid).set(teacherData);
-      await db.collection('users').doc(uid).set({
-        uid, email, name, role: 'teacher', status: 'active',
-        teacherId: employeeId,
-        createdAt: firebase.firestore.FieldValue.serverTimestamp()
-      });
+teacherData.uid       = uid;
+teacherData.createdAt = firebase.firestore.FieldValue.serverTimestamp();
+
+await db.collection('teachers').doc(uid).set(teacherData);
+await db.collection('users').doc(uid).set({
+  uid, email, name, role: 'teacher', status: 'active',
+  teacherId: employeeId,
+  createdAt: firebase.firestore.FieldValue.serverTimestamp()
+});
       await logActivity('Teacher added: ' + name);
       showToast('Teacher added successfully!', 'success');
     } else {

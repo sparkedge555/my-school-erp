@@ -616,22 +616,28 @@
     }
 
     /* ── Role redirect ──────────────────────────────────────── */
-    function redirectByRole(role) {
-      const base = window.__ERP_BASE__ || '/';
-      const map = {
-        admin:   base + 'admin/dashboard.html',
-        teacher: base + 'teacher/portal.html',
-        student: base + 'student/portal.html',
-      };
-      const dest = map[role];
-      if (dest) {
-        window.location.href = dest;
-      } else {
-        setLoading(false);
-        hideLoader();
-        showMsg('Role not configured. Contact admin.', 'error');
-      }
-    }
+  function redirectByRole(role) {
+  // Get base path dynamically — works for both localhost and GitHub Pages
+  const currentPath = window.location.href;
+  const indexPos = currentPath.lastIndexOf('index.html');
+  const base = indexPos > -1 
+    ? currentPath.substring(0, indexPos)
+    : currentPath.endsWith('/') ? currentPath : currentPath + '/';
+  
+  const map = {
+    admin:   base + 'admin/dashboard.html',
+    teacher: base + 'teacher/portal.html',
+    student: base + 'student/portal.html',
+  };
+  const dest = map[role];
+  if (dest) {
+    window.location.replace(dest); // use replace() not href to prevent back button loop
+  } else {
+    setLoading(false);
+    hideLoader();
+    showMsg('Role not configured. Contact admin.', 'error');
+  }
+}
 
     /* ── Firebase error map ──────────────────────────────────── */
     function mapFirebaseError(code) {

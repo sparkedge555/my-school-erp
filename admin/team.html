@@ -695,8 +695,16 @@
     btn.disabled = true; btn.textContent = 'Creating account…';
 
     try {
-      const cred = await firebase.auth().createUserWithEmailAndPassword(email, password);
-      const uid  = cred.user.uid;
+      let secondaryApp;
+try {
+  secondaryApp = firebase.app('secondary');
+} catch(e) {
+  secondaryApp = firebase.initializeApp(firebase.app().options, 'secondary');
+}
+const secondaryAuth2 = secondaryApp.auth();
+const cred = await secondaryAuth2.createUserWithEmailAndPassword(email, password);
+const uid  = cred.user.uid;
+await secondaryAuth2.signOut();
 
       const modules = selectedLevel === 'Staff' ? getCheckedModules() : [];
       await db.collection('users').doc(uid).set({

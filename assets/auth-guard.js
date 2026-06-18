@@ -16,7 +16,29 @@
 (function () {
   'use strict';
 
-  const LOGIN_REDIRECT = '/my-school-erp/index.html';
+  // FIND THIS (line 3 of the IIFE):
+const LOGIN_REDIRECT = '/my-school-erp/index.html';
+
+// REPLACE WITH:
+// REPLACE the LOGIN_REDIRECT constant at the top of the IIFE with:
+function buildLoginUrl() {
+  const loc = window.location;
+  const href = loc.href;
+  
+  // Find the repo root by looking for known subfolder patterns
+  const patterns = ['/admin/', '/teacher/', '/student/'];
+  for (const pattern of patterns) {
+    const idx = href.indexOf(pattern);
+    if (idx > -1) {
+      return href.substring(0, idx) + '/index.html';
+    }
+  }
+  // Fallback: go up one directory
+  const pathParts = loc.pathname.split('/');
+  pathParts.pop(); // remove filename
+  return loc.origin + pathParts.join('/') + '/index.html';
+}
+const LOGIN_REDIRECT = buildLoginUrl();
 
   /**
    * Internal helper: resolves once Firebase reports an auth state,

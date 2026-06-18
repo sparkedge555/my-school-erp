@@ -692,8 +692,10 @@ async function loadDashboardStats(s) {
 
   // Latest result %
   try {
-    const snap = await db.collection('marks').where('studentId', '==', s.id)
-      .orderBy('examDate', 'desc').limit(20).get();
+    const snap = await db.collection('marks')
+      .where('studentId', '==', s.id)
+      .orderBy('enteredAt', 'desc')
+      .get();
     if (snap.empty) {
       document.getElementById('statResultVal').textContent = '—';
     } else {
@@ -793,8 +795,11 @@ function buildExamTabs() {
 async function loadResults(s) {
   buildExamTabs();
   try {
-    const snap = await db.collection('marks').where('studentId', '==', s.id)
-      .orderBy('examDate', 'desc').get();
+    const snap = await db.collection('marks')
+      .where('studentId', '==', s.id)
+      .orderBy('enteredAt', 'desc')
+      .limit(20)
+      .get();
     allMarks = [];
     snap.forEach(d => allMarks.push({ id: d.id, ...d.data() }));
     renderResultsTable();
@@ -811,7 +816,7 @@ function renderResultsTable() {
 
   const list = activeExamFilter === 'All'
     ? allMarks
-    : allMarks.filter(m => (m.examName || m.exam) === activeExamFilter);
+    : allMarks.filter(m => (m.examType || m.examName || m.exam) === activeExamFilter);
 
   if (!list.length) {
     body.innerHTML = `<tr><td colspan="5"><div class="empty-state"><div class="empty-icon">📊</div>No results found${activeExamFilter !== 'All' ? ' for ' + escapeHtml(activeExamFilter) : ''}.</div></td></tr>`;
@@ -1100,9 +1105,11 @@ document.getElementById('changePwBtn').addEventListener('click', async function 
 
   try {
     const user = firebase.auth().currentUser;
-    const credential = firebase.auth.EmailAuthProvider.credential(user.email, curPw);
-    await user.reauthenticateWithCredential(credential);
-    await user.updatePassword(newPw);
+   const currentUser = firebase.auth().currentUser;
+if (!currentUser) throw new Error('Not logged in');
+const credential = firebase.auth.EmailAuthProvider.credential(currentUser.email, curPw);
+await currentUser.reauthenticateWithCredential(credential);
+await currentUser.updatePassword(newPw);
 
     document.getElementById('curPassword').value = '';
     document.getElementById('newPassword').value = '';
