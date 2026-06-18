@@ -1,0 +1,980 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Announcements — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css" />
+
+  <style>
+    /* ── Page helpers ──────────────────────────────────────── */
+    .page-content { overflow-y: auto; }
+
+    .sidebar-logo span.school-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+    }
+
+    /* ── Header user chip ──────────────────────────────────── */
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      padding: 5px 9px;
+      font-size: 16px;
+      color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Filter bar ────────────────────────────────────────── */
+    .filter-bar {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 20px;
+      flex-wrap: wrap;
+    }
+    .filter-bar__label {
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--text-muted);
+      margin-right: 4px;
+    }
+    .filter-chip {
+      padding: 6px 14px;
+      border-radius: 20px;
+      border: 1.5px solid var(--border);
+      background: var(--surface);
+      font-size: 13px;
+      font-weight: 500;
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: all .15s ease;
+      font-family: inherit;
+    }
+    .filter-chip:hover { border-color: var(--primary); color: var(--primary); }
+    .filter-chip.active {
+      background: var(--primary);
+      border-color: var(--primary);
+      color: #fff;
+    }
+
+    /* ── Pinned section ────────────────────────────────────── */
+    .pinned-section {
+      margin-bottom: 24px;
+      display: none; /* shown via JS */
+    }
+    .section-eyebrow {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 12px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: .08em;
+      color: var(--warning);
+      margin-bottom: 12px;
+    }
+    .section-eyebrow::after {
+      content: '';
+      flex: 1;
+      height: 1px;
+      background: linear-gradient(to right, #f39c1240, transparent);
+    }
+    .pinned-strip {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .pinned-item {
+      background: linear-gradient(135deg, #fffbeb 0%, #fef9ed 100%);
+      border: 1.5px solid #fcd34d;
+      border-left: 4px solid var(--warning);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      align-items: flex-start;
+      gap: 12px;
+      transition: box-shadow .15s;
+    }
+    .pinned-item:hover { box-shadow: 0 2px 12px rgba(243,156,18,.18); }
+    .pinned-item__icon { font-size: 18px; flex-shrink: 0; margin-top: 1px; }
+    .pinned-item__body { flex: 1; min-width: 0; }
+    .pinned-item__title {
+      font-size: 14.5px;
+      font-weight: 700;
+      color: var(--text);
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .pinned-item__meta {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 4px;
+    }
+    .pinned-item__date { font-size: 12px; color: var(--text-muted); }
+    .pinned-item__actions { display: flex; gap: 4px; flex-shrink: 0; margin-top: 2px; }
+
+    /* ── Announcements grid ────────────────────────────────── */
+    .ann-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 18px;
+      margin-bottom: 24px;
+    }
+    @media (max-width: 1024px) { .ann-grid { grid-template-columns: repeat(2, 1fr); } }
+    @media (max-width: 640px)  { .ann-grid { grid-template-columns: 1fr; } }
+
+    /* ── Announcement card ─────────────────────────────────── */
+    .ann-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      transition: transform .2s, box-shadow .2s;
+      position: relative;
+      border-top: 3px solid var(--border);
+    }
+    .ann-card:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
+    .ann-card.priority-urgent  { border-top-color: var(--danger); }
+    .ann-card.priority-important { border-top-color: var(--warning); }
+    .ann-card.priority-normal  { border-top-color: var(--info); }
+
+    .ann-card__head {
+      padding: 14px 14px 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 8px;
+    }
+    .ann-card__title {
+      font-size: 15px;
+      font-weight: 700;
+      color: var(--text);
+      line-height: 1.3;
+      flex: 1;
+      margin-right: 8px;
+    }
+    .ann-card__body {
+      padding: 10px 14px 0;
+      font-size: 13.5px;
+      color: var(--text-muted);
+      line-height: 1.55;
+      flex: 1;
+    }
+    .ann-card__body .read-more-btn {
+      background: none;
+      border: none;
+      color: var(--primary);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      padding: 0;
+      font-family: inherit;
+    }
+    .ann-card__body .read-more-btn:hover { text-decoration: underline; }
+    .ann-card__foot {
+      padding: 12px 14px 14px;
+      border-top: 1px solid var(--border);
+      margin-top: 12px;
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+    .ann-card__meta {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      flex-wrap: wrap;
+    }
+    .ann-card__byline {
+      font-size: 12px;
+      color: var(--text-muted);
+    }
+    .ann-card__actions {
+      display: flex;
+      gap: 6px;
+      align-items: center;
+    }
+    .ann-card__actions .action-btn {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      cursor: pointer;
+      padding: 4px 9px;
+      font-size: 12.5px;
+      font-weight: 500;
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: 4px;
+      transition: all .15s;
+      font-family: inherit;
+    }
+    .action-btn:hover { background: #e8edf5; color: var(--primary); border-color: var(--primary); }
+    .action-btn.pin-active { background: #fff8e1; border-color: #f39c12; color: #b45309; }
+    .action-btn.del-btn:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Expiry badge ──────────────────────────────────────── */
+    .badge-expiry {
+      background: #f0fdf4;
+      color: #166534;
+      border: 1px solid #bbf7d0;
+      padding: 2px 8px;
+      border-radius: 20px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-expiry.expired {
+      background: #fef2f2;
+      color: var(--danger);
+      border-color: #fecaca;
+    }
+
+    /* ── Empty / loading states ────────────────────────────── */
+    .empty-state {
+      text-align: center;
+      padding: 48px 16px;
+      color: var(--text-muted);
+      font-size: 14px;
+      grid-column: 1/-1;
+    }
+    .empty-state .empty-icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state strong { display: block; font-size: 15px; color: var(--text); margin-bottom: 4px; }
+
+    @keyframes shimmer {
+      0%   { background-position: -600px 0; }
+      100% { background-position: 600px 0; }
+    }
+    .skeleton {
+      background: linear-gradient(90deg, #e8edf3 25%, #f5f7fa 50%, #e8edf3 75%);
+      background-size: 1200px 100%;
+      animation: shimmer 1.4s infinite;
+      border-radius: 4px;
+      display: block;
+    }
+    .skeleton-card {
+      background: var(--surface);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      padding: 18px;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      border-top: 3px solid #e8edf3;
+    }
+
+    /* ── Count badge in header ─────────────────────────────── */
+    .count-badge {
+      background: var(--primary);
+      color: #fff;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 700;
+      padding: 2px 8px;
+      margin-left: 8px;
+    }
+
+    /* ── Modal overrides ───────────────────────────────────── */
+    .modal-close {
+      background: none;
+      border: none;
+      font-size: 20px;
+      cursor: pointer;
+      color: var(--text-muted);
+      line-height: 1;
+      padding: 2px 6px;
+      border-radius: 4px;
+    }
+    .modal-close:hover { background: var(--bg); color: var(--text); }
+
+    .toggle-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+    }
+    .toggle-row__label {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 14px;
+      font-weight: 500;
+      color: var(--text);
+    }
+    .toggle {
+      width: 42px;
+      height: 24px;
+      background: #cbd5e1;
+      border-radius: 12px;
+      position: relative;
+      transition: background .2s;
+      flex-shrink: 0;
+    }
+    .toggle.on { background: var(--primary); }
+    .toggle::after {
+      content: '';
+      position: absolute;
+      top: 3px;
+      left: 3px;
+      width: 18px;
+      height: 18px;
+      background: #fff;
+      border-radius: 50%;
+      transition: transform .2s;
+      box-shadow: 0 1px 3px rgba(0,0,0,.2);
+    }
+    .toggle.on::after { transform: translateX(18px); }
+
+    /* Conditional class field */
+    #classDropdownWrap { display: none; }
+    #classDropdownWrap.visible { display: block; }
+
+    /* Modal max-width for announcements */
+    #annModal .modal-box { max-width: 560px; }
+
+    /* View-message modal */
+    #viewModal .modal-box { max-width: 560px; }
+    .view-message-body {
+      font-size: 14.5px;
+      color: var(--text);
+      line-height: 1.7;
+      white-space: pre-wrap;
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     SIDEBAR
+══════════════════════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html"    data-page="dashboard">📊 Dashboard</a></li>
+    <li><a href="announcements.html" data-page="announcements" class="active">📢 Announcements</a></li>
+
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html"     data-page="teachers">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html"     data-page="students">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html"    data-page="timetable">📅 Timetable</a></li>
+
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html"         data-page="fees">💰 Fee Management</a></li>
+
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html"        data-page="marks">📝 Marks &amp; Results</a></li>
+
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html"         data-page="docs">📄 Certificates</a></li>
+
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html"         data-page="team">👥 Team Members</a></li>
+    <li><a href="settings.html"     data-page="settings">⚙️ Settings</a></li>
+  </ul>
+
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color:rgba(255,255,255,.7);">
+      🚪 Logout
+    </a>
+  </div>
+</aside>
+
+<!-- ══════════════════════════════════════════════════════════
+     MAIN CONTENT
+══════════════════════════════════════════════════════════ -->
+<div class="main-content">
+
+  <!-- TOP HEADER -->
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">
+        Announcements
+        <span class="count-badge" id="totalCountBadge">0</span>
+      </h1>
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="btn btn-accent btn-sm" id="openAnnModalBtn">📢 New Announcement</button>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <!-- PAGE BODY -->
+  <main class="page-content" id="pageContent">
+
+    <!-- ── FILTER BAR ───────────────────────────────────────── -->
+    <div class="filter-bar" id="filterBar">
+      <span class="filter-bar__label">Filter:</span>
+      <button class="filter-chip active" data-filter="all">All</button>
+      <button class="filter-chip" data-filter="Students Only">Students</button>
+      <button class="filter-chip" data-filter="Teachers Only">Teachers</button>
+      <button class="filter-chip" data-filter="urgent">🔴 Urgent</button>
+      <button class="filter-chip" data-filter="week">📅 This Week</button>
+    </div>
+
+    <!-- ── PINNED SECTION ───────────────────────────────────── -->
+    <div class="pinned-section" id="pinnedSection">
+      <div class="section-eyebrow">📌 Pinned</div>
+      <div class="pinned-strip" id="pinnedList"></div>
+    </div>
+
+    <!-- ── ALL ANNOUNCEMENTS GRID ───────────────────────────── -->
+    <div class="ann-grid" id="annGrid">
+      <!-- skeleton placeholders -->
+      <div class="skeleton-card">
+        <span class="skeleton" style="height:14px;width:50%"></span>
+        <span class="skeleton" style="height:20px;width:80%"></span>
+        <span class="skeleton" style="height:13px;width:100%"></span>
+        <span class="skeleton" style="height:13px;width:70%"></span>
+      </div>
+      <div class="skeleton-card">
+        <span class="skeleton" style="height:14px;width:40%"></span>
+        <span class="skeleton" style="height:20px;width:90%"></span>
+        <span class="skeleton" style="height:13px;width:100%"></span>
+        <span class="skeleton" style="height:13px;width:60%"></span>
+      </div>
+      <div class="skeleton-card">
+        <span class="skeleton" style="height:14px;width:55%"></span>
+        <span class="skeleton" style="height:20px;width:75%"></span>
+        <span class="skeleton" style="height:13px;width:100%"></span>
+        <span class="skeleton" style="height:13px;width:80%"></span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     ADD / EDIT ANNOUNCEMENT MODAL
+══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="annModal">
+  <div class="modal-box">
+    <div class="modal-header">
+      <h3 class="card-title" id="annModalTitle">📢 New Announcement</h3>
+      <button class="modal-close" id="closeAnnModal">✕</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-row">
+        <div class="form-group" style="grid-column:1/-1;">
+          <label for="fTitle">Title <span style="color:var(--danger)">*</span></label>
+          <input type="text" id="fTitle" class="form-control" placeholder="e.g. Parent-Teacher Meeting on Friday" maxlength="120" />
+        </div>
+      </div>
+      <div class="form-group">
+        <label for="fMessage">Message <span style="color:var(--danger)">*</span></label>
+        <textarea id="fMessage" class="form-control" rows="5" placeholder="Write the full announcement text here…" style="resize:vertical;"></textarea>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="fTarget">Target Audience <span style="color:var(--danger)">*</span></label>
+          <select id="fTarget" class="form-control">
+            <option value="All">All</option>
+            <option value="Students Only">Students Only</option>
+            <option value="Teachers Only">Teachers Only</option>
+            <option value="Specific Class">Specific Class</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label for="fPriority">Priority <span style="color:var(--danger)">*</span></label>
+          <select id="fPriority" class="form-control">
+            <option value="Normal">Normal</option>
+            <option value="Important">Important</option>
+            <option value="Urgent">Urgent</option>
+          </select>
+        </div>
+      </div>
+      <!-- Conditional class dropdown -->
+      <div class="form-group" id="classDropdownWrap">
+        <label for="fClass">Select Class</label>
+        <select id="fClass" class="form-control">
+          <option value="">— Choose a class —</option>
+          <option>Class 1</option><option>Class 2</option><option>Class 3</option>
+          <option>Class 4</option><option>Class 5</option><option>Class 6</option>
+          <option>Class 7</option><option>Class 8</option><option>Class 9</option>
+          <option>Class 10</option><option>Class 11</option><option>Class 12</option>
+        </select>
+      </div>
+      <div class="form-row">
+        <div class="form-group">
+          <label for="fExpiry">Expiry Date <span style="color:var(--text-muted);font-weight:400;">(optional)</span></label>
+          <input type="date" id="fExpiry" class="form-control" />
+        </div>
+        <div class="form-group" style="display:flex;align-items:flex-end;">
+          <!-- Pin toggle -->
+          <div class="toggle-row" style="width:100%;" id="pinToggleRow" tabindex="0" role="button" aria-pressed="false">
+            <span class="toggle-row__label">📌 Pin to top</span>
+            <div class="toggle" id="pinToggleEl"></div>
+          </div>
+          <input type="hidden" id="fPinned" value="false" />
+        </div>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" id="cancelAnnModal">Cancel</button>
+      <button class="btn btn-primary" id="saveAnnBtn">Post Announcement</button>
+    </div>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     VIEW FULL MESSAGE MODAL
+══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="viewModal">
+  <div class="modal-box" id="viewModal">
+    <div class="modal-box" style="max-width:560px;">
+      <div class="modal-header">
+        <h3 class="card-title" id="viewModalTitle">Announcement</h3>
+        <button class="modal-close" id="closeViewModal">✕</button>
+      </div>
+      <div class="modal-body">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:14px;" id="viewModalMeta"></div>
+        <p class="view-message-body" id="viewModalBody"></p>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<!-- ══════════════════════════════════════════════════════════
+     SCRIPTS
+══════════════════════════════════════════════════════════ -->
+<script>
+(function () {
+  'use strict';
+
+  /* ── Boot ─────────────────────────────────────────────── */
+  checkAdminAuth().then(user => { initPage(user); });
+
+  /* ── Hamburger ────────────────────────────────────────── */
+  document.getElementById('hamburger').addEventListener('click', () => {
+    document.getElementById('sidebar').classList.toggle('mobile-open');
+  });
+
+  /* ── State ────────────────────────────────────────────── */
+  let activeFilter  = 'all';
+  let allDocs       = [];    // cache of all announcement docs from onSnapshot
+  let editingId     = null;
+  let pinnedState   = false;
+
+  /* ── Helpers ──────────────────────────────────────────── */
+  function getInitials(name) {
+    if (!name) return '?';
+    return name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0, 2).join('');
+  }
+
+  function escapeHtml(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function priorityBadgeHtml(p) {
+    const map = { Urgent: 'badge-danger', Important: 'badge-warning', Normal: 'badge-info' };
+    return `<span class="badge ${map[p] || 'badge-info'}">${escapeHtml(p)}</span>`;
+  }
+
+  function targetBadgeHtml(t) {
+    return `<span class="badge badge-primary">${escapeHtml(t)}</span>`;
+  }
+
+  function formatDate(ts) {
+    if (!ts) return '—';
+    const d = ts.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function isThisWeek(ts) {
+    if (!ts) return false;
+    const d    = ts.toDate ? ts.toDate() : new Date(ts);
+    const now  = new Date();
+    const dow  = now.getDay();
+    const weekStart = new Date(now); weekStart.setDate(now.getDate() - dow); weekStart.setHours(0,0,0,0);
+    const weekEnd   = new Date(weekStart); weekEnd.setDate(weekStart.getDate() + 7);
+    return d >= weekStart && d < weekEnd;
+  }
+
+  function expiryBadgeHtml(expiry) {
+    if (!expiry) return '';
+    const exp = new Date(expiry);
+    const today = new Date(); today.setHours(0,0,0,0);
+    const expired = exp < today;
+    const label = expired ? '⏰ Expired ' + exp.toLocaleDateString('en-IN', {day:'2-digit',month:'short'})
+                          : '⏳ Expires ' + exp.toLocaleDateString('en-IN', {day:'2-digit',month:'short'});
+    return `<span class="badge-expiry${expired ? ' expired' : ''}">${label}</span>`;
+  }
+
+  /* ── Auto-delete expired announcements on load ─────────── */
+  async function purgeExpired() {
+    try {
+      const today = new Date(); today.setHours(0,0,0,0);
+      const snap = await db.collection('announcements')
+        .where('expiryDate', '<', today.toISOString().split('T')[0])
+        .get();
+      if (snap.empty) return;
+      const batch = db.batch();
+      snap.forEach(d => batch.delete(d.ref));
+      await batch.commit();
+      if (snap.size > 0) {
+        showToast(`${snap.size} expired announcement(s) removed automatically.`, 'info');
+      }
+    } catch (e) {
+      // Silently ignore — not critical
+    }
+  }
+
+  /* ── Filter docs ──────────────────────────────────────── */
+  function applyFilter(docs) {
+    if (activeFilter === 'all') return docs;
+    if (activeFilter === 'urgent')       return docs.filter(d => d.priority === 'Urgent');
+    if (activeFilter === 'week')         return docs.filter(d => isThisWeek(d.postedDate));
+    return docs.filter(d => d.target === activeFilter);
+  }
+
+  /* ── Render grid ──────────────────────────────────────── */
+  function renderGrid(docs) {
+    const grid = document.getElementById('annGrid');
+    const pinnedSection = document.getElementById('pinnedSection');
+    const pinnedList    = document.getElementById('pinnedList');
+
+    const filtered  = applyFilter(docs);
+    const pinned    = filtered.filter(d => d.pinned);
+    const unpinned  = filtered.filter(d => !d.pinned);
+
+    // Update count badge
+    document.getElementById('totalCountBadge').textContent = docs.length;
+
+    // Pinned strip
+    if (pinned.length > 0) {
+      pinnedSection.style.display = 'block';
+      pinnedList.innerHTML = '';
+      pinned.forEach(d => {
+        const item = document.createElement('div');
+        item.className = 'pinned-item';
+        item.innerHTML = `
+          <span class="pinned-item__icon">📌</span>
+          <div class="pinned-item__body">
+            <div class="pinned-item__title">${escapeHtml(d.title)}</div>
+            <div class="pinned-item__meta">
+              ${priorityBadgeHtml(d.priority || 'Normal')}
+              ${targetBadgeHtml(d.target || 'All')}
+              <span class="pinned-item__date">${formatDate(d.postedDate)}</span>
+              ${d.expiryDate ? expiryBadgeHtml(d.expiryDate) : ''}
+            </div>
+          </div>
+          <div class="pinned-item__actions">
+            <button class="action-btn" onclick="openEdit('${d.id}')">✏️ Edit</button>
+            <button class="action-btn del-btn" onclick="deleteAnn('${d.id}', this)">🗑️</button>
+          </div>
+        `;
+        pinnedList.appendChild(item);
+      });
+    } else {
+      pinnedSection.style.display = 'none';
+    }
+
+    // Main grid — unpinned
+    grid.innerHTML = '';
+    if (filtered.length === 0) {
+      grid.innerHTML = `
+        <div class="empty-state">
+          <div class="empty-icon">📭</div>
+          <strong>No announcements here</strong>
+          ${activeFilter !== 'all' ? 'Try clearing the filter or add a new announcement.' : 'Get started by clicking "New Announcement".'}
+        </div>`;
+      return;
+    }
+
+    unpinned.forEach(d => {
+      const preview   = (d.message || '').length > 100
+        ? escapeHtml(d.message.slice(0, 100)) + `<button class="read-more-btn" onclick="openView('${d.id}')">…read more</button>`
+        : escapeHtml(d.message || '');
+
+      const priorityClass = {
+        'Urgent':    'priority-urgent',
+        'Important': 'priority-important',
+        'Normal':    'priority-normal',
+      }[d.priority] || 'priority-normal';
+
+      const card = document.createElement('div');
+      card.className = `ann-card ${priorityClass}`;
+      card.innerHTML = `
+        <div class="ann-card__head">
+          <span class="ann-card__title">${escapeHtml(d.title || 'Untitled')}</span>
+          ${priorityBadgeHtml(d.priority || 'Normal')}
+        </div>
+        <div class="ann-card__body">${preview}</div>
+        <div class="ann-card__foot">
+          <div class="ann-card__meta">
+            ${targetBadgeHtml(d.target || 'All')}
+            ${d.expiryDate ? expiryBadgeHtml(d.expiryDate) : ''}
+          </div>
+          <div class="ann-card__byline">
+            By <strong>${escapeHtml(d.postedBy || 'Admin')}</strong> · ${formatDate(d.postedDate)}
+          </div>
+          <div class="ann-card__actions">
+            <button class="action-btn ${d.pinned ? 'pin-active' : ''}"
+              onclick="togglePin('${d.id}', ${!!d.pinned}, this)" title="${d.pinned ? 'Unpin' : 'Pin'}">
+              📌 ${d.pinned ? 'Unpin' : 'Pin'}
+            </button>
+            <button class="action-btn" onclick="openEdit('${d.id}')">✏️ Edit</button>
+            <button class="action-btn del-btn" onclick="deleteAnn('${d.id}', this)">🗑️ Delete</button>
+          </div>
+        </div>
+      `;
+      grid.appendChild(card);
+    });
+  }
+
+  /* ── Live listener ────────────────────────────────────── */
+  function startListener() {
+    db.collection('announcements')
+      .orderBy('pinned', 'desc')
+      .orderBy('postedDate', 'desc')
+      .onSnapshot(snap => {
+        allDocs = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        renderGrid(allDocs);
+      }, err => {
+        console.error(err);
+        document.getElementById('annGrid').innerHTML =
+          `<div class="empty-state"><div class="empty-icon">⚠️</div><strong>Could not load announcements.</strong>Check your connection and refresh.</div>`;
+      });
+  }
+
+  /* ── Filter chips ─────────────────────────────────────── */
+  document.getElementById('filterBar').addEventListener('click', e => {
+    const chip = e.target.closest('.filter-chip');
+    if (!chip) return;
+    document.querySelectorAll('.filter-chip').forEach(c => c.classList.remove('active'));
+    chip.classList.add('active');
+    activeFilter = chip.dataset.filter;
+    renderGrid(allDocs);
+  });
+
+  /* ── Pin / Unpin ──────────────────────────────────────── */
+  window.togglePin = async function (id, currentlyPinned, btn) {
+    btn.disabled = true;
+    try {
+      await db.collection('announcements').doc(id).update({ pinned: !currentlyPinned });
+      await logActivity((currentlyPinned ? 'Unpinned' : 'Pinned') + ' an announcement');
+      showToast(currentlyPinned ? 'Announcement unpinned.' : 'Announcement pinned to top.', 'success');
+    } catch (e) {
+      showToast('Could not update pin status.', 'error');
+      btn.disabled = false;
+    }
+  };
+
+  /* ── Delete ───────────────────────────────────────────── */
+  window.deleteAnn = async function (id, btn) {
+    if (!confirm('Delete this announcement? This cannot be undone.')) return;
+    btn.disabled = true;
+    try {
+      await db.collection('announcements').doc(id).delete();
+      await logActivity('Deleted an announcement');
+      showToast('Announcement deleted.', 'success');
+    } catch (e) {
+      showToast('Could not delete announcement.', 'error');
+      btn.disabled = false;
+    }
+  };
+
+  /* ── View full message ────────────────────────────────── */
+  window.openView = function (id) {
+    const d = allDocs.find(x => x.id === id);
+    if (!d) return;
+    document.getElementById('viewModalTitle').textContent = d.title || 'Announcement';
+    document.getElementById('viewModalMeta').innerHTML =
+      priorityBadgeHtml(d.priority || 'Normal') + ' ' +
+      targetBadgeHtml(d.target || 'All') + ' ' +
+      `<span class="ann-card__byline" style="font-size:12.5px;">By <strong>${escapeHtml(d.postedBy||'Admin')}</strong> · ${formatDate(d.postedDate)}</span>`;
+    document.getElementById('viewModalBody').textContent = d.message || '';
+    document.getElementById('viewModal').classList.add('active');
+  };
+  document.getElementById('closeViewModal').addEventListener('click', () => {
+    document.getElementById('viewModal').classList.remove('active');
+  });
+  document.getElementById('viewModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('viewModal'))
+      document.getElementById('viewModal').classList.remove('active');
+  });
+
+  /* ── Modal open/close ─────────────────────────────────── */
+  function openModal(id) {
+    editingId = id || null;
+    const modal = document.getElementById('annModal');
+    document.getElementById('annModalTitle').textContent = id ? '✏️ Edit Announcement' : '📢 New Announcement';
+    document.getElementById('saveAnnBtn').textContent    = id ? 'Save Changes' : 'Post Announcement';
+    modal.classList.add('active');
+  }
+  function closeModal() {
+    document.getElementById('annModal').classList.remove('active');
+    clearForm();
+    editingId = null;
+  }
+  document.getElementById('openAnnModalBtn').addEventListener('click', () => openModal(null));
+  document.getElementById('closeAnnModal').addEventListener('click', closeModal);
+  document.getElementById('cancelAnnModal').addEventListener('click', closeModal);
+  document.getElementById('annModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('annModal')) closeModal();
+  });
+
+  /* ── Target → class dropdown ──────────────────────────── */
+  document.getElementById('fTarget').addEventListener('change', function () {
+    const wrap = document.getElementById('classDropdownWrap');
+    wrap.classList.toggle('visible', this.value === 'Specific Class');
+  });
+
+  /* ── Pin toggle ───────────────────────────────────────── */
+  document.getElementById('pinToggleRow').addEventListener('click', function () {
+    pinnedState = !pinnedState;
+    document.getElementById('fPinned').value = pinnedState;
+    const el = document.getElementById('pinToggleEl');
+    el.classList.toggle('on', pinnedState);
+    this.setAttribute('aria-pressed', pinnedState);
+  });
+
+  /* ── Clear form ───────────────────────────────────────── */
+  function clearForm() {
+    document.getElementById('fTitle').value   = '';
+    document.getElementById('fMessage').value = '';
+    document.getElementById('fTarget').value  = 'All';
+    document.getElementById('fPriority').value = 'Normal';
+    document.getElementById('fExpiry').value  = '';
+    document.getElementById('fClass').value   = '';
+    document.getElementById('classDropdownWrap').classList.remove('visible');
+    pinnedState = false;
+    document.getElementById('fPinned').value = 'false';
+    document.getElementById('pinToggleEl').classList.remove('on');
+    document.getElementById('pinToggleRow').setAttribute('aria-pressed', 'false');
+  }
+
+  /* ── Open edit ────────────────────────────────────────── */
+  window.openEdit = async function (id) {
+    try {
+      const docSnap = await db.collection('announcements').doc(id).get();
+      if (!docSnap.exists) return;
+      const d = docSnap.data();
+      document.getElementById('fTitle').value    = d.title    || '';
+      document.getElementById('fMessage').value  = d.message  || '';
+      document.getElementById('fTarget').value   = d.target   || 'All';
+      document.getElementById('fPriority').value = d.priority || 'Normal';
+      document.getElementById('fExpiry').value   = d.expiryDate || '';
+      if (d.target === 'Specific Class') {
+        document.getElementById('classDropdownWrap').classList.add('visible');
+        document.getElementById('fClass').value = d.targetClass || '';
+      }
+      pinnedState = !!d.pinned;
+      document.getElementById('fPinned').value = String(pinnedState);
+      document.getElementById('pinToggleEl').classList.toggle('on', pinnedState);
+      document.getElementById('pinToggleRow').setAttribute('aria-pressed', String(pinnedState));
+      openModal(id);
+    } catch (e) {
+      showToast('Could not load announcement.', 'error');
+    }
+  };
+
+  /* ── Save ─────────────────────────────────────────────── */
+  document.getElementById('saveAnnBtn').addEventListener('click', async function () {
+    const title    = document.getElementById('fTitle').value.trim();
+    const message  = document.getElementById('fMessage').value.trim();
+    const target   = document.getElementById('fTarget').value;
+    const priority = document.getElementById('fPriority').value;
+    const expiry   = document.getElementById('fExpiry').value;
+    const pinned   = document.getElementById('fPinned').value === 'true';
+    const targetClass = document.getElementById('fClass').value;
+
+    if (!title) { showToast('Please enter a title.', 'error'); document.getElementById('fTitle').focus(); return; }
+    if (!message) { showToast('Please enter a message.', 'error'); document.getElementById('fMessage').focus(); return; }
+    if (target === 'Specific Class' && !targetClass) {
+      showToast('Please select a class.', 'error');
+      document.getElementById('fClass').focus();
+      return;
+    }
+
+    this.disabled = true;
+    const original = this.textContent;
+    this.textContent = editingId ? 'Saving…' : 'Posting…';
+
+    const payload = {
+      title, message, target, priority, pinned,
+      targetClass: target === 'Specific Class' ? targetClass : '',
+      expiryDate:  expiry || '',
+      postedBy:   (window.currentUser && window.currentUser.name) ? window.currentUser.name : 'Admin',
+      postedDate:  firebase.firestore.FieldValue.serverTimestamp(),
+    };
+
+    try {
+      if (editingId) {
+        await db.collection('announcements').doc(editingId).update(payload);
+        await logActivity('Edited announcement: ' + title);
+        showToast('Announcement updated!', 'success');
+      } else {
+        await db.collection('announcements').add(payload);
+        await logActivity('Posted announcement: ' + title);
+        showToast('Announcement posted!', 'success');
+      }
+      closeModal();
+    } catch (err) {
+      console.error(err);
+      showToast('Failed to save. Please try again.', 'error');
+    } finally {
+      this.disabled = false;
+      this.textContent = original;
+    }
+  });
+
+  /* ── Main init ────────────────────────────────────────── */
+  function initPage(user) {
+    document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+    document.getElementById('headerAvatar').textContent   = getInitials(user.name || user.email);
+
+    db.collection('settings').doc('schoolConfig').get().then(doc => {
+      if (doc.exists && doc.data().schoolName) {
+        document.getElementById('schoolName').textContent = doc.data().schoolName;
+        document.title = `Announcements — ${doc.data().schoolName}`;
+      }
+    }).catch(() => {});
+
+    purgeExpired();
+    startListener();
+  }
+
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,1242 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Certificates — My School ERP</title>
+
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-app-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-auth-compat.js"></script>
+  <script src="https://www.gstatic.com/firebasejs/9.22.0/firebase-firestore-compat.js"></script>
+  <script src="../assets/firebase-config.js"></script>
+  <script src="../assets/auth-guard.js"></script>
+  <link rel="stylesheet" href="../assets/style.css">
+
+  <style>
+    /* ── Page-level overrides & extras ─────────────────────── */
+    .page-content { overflow-y: auto; }
+
+    .sidebar-logo span.school-name {
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      max-width: 170px;
+    }
+
+    .user-chip { display: flex; align-items: center; gap: 8px; }
+    .user-chip__name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .header-logout {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      padding: 5px 9px;
+      font-size: 16px;
+      color: var(--text-muted);
+      transition: background .15s, color .15s;
+    }
+    .header-logout:hover { background: #fef2f2; color: var(--danger); border-color: #fecaca; }
+
+    /* ── Tab navigation ──────────────────────────────────────── */
+    .tab-nav {
+      display: flex;
+      gap: 6px;
+      padding: 6px;
+      flex-wrap: wrap;
+    }
+    .tab-btn {
+      background: transparent;
+      border: none;
+      cursor: pointer;
+      padding: 10px 18px;
+      font-size: 13.5px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-radius: 6px;
+      transition: background .15s, color .15s;
+      font-family: inherit;
+      white-space: nowrap;
+    }
+    .tab-btn:hover { background: var(--bg); color: var(--text); }
+    .tab-btn.active { background: var(--primary); color: #ffffff; }
+
+    .tab-panel { display: none; }
+    .tab-panel.active { display: block; }
+
+    /* ── Form + preview split ────────────────────────────────── */
+    .form-preview-grid {
+      display: grid;
+      grid-template-columns: 42fr 58fr;
+      gap: 20px;
+    }
+    @media (max-width: 900px) {
+      .form-preview-grid { grid-template-columns: 1fr; }
+    }
+
+    /* ── Student search ──────────────────────────────────────── */
+    .student-search-wrap { position: relative; }
+    .search-dropdown {
+      position: absolute;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow-lg);
+      max-height: 260px;
+      overflow-y: auto;
+      z-index: 50;
+      display: none;
+    }
+    .search-dropdown.open { display: block; }
+    .search-dropdown-item {
+      padding: 10px 14px;
+      cursor: pointer;
+      border-bottom: 1px solid var(--border);
+      transition: background .12s;
+    }
+    .search-dropdown-item:last-child { border-bottom: none; }
+    .search-dropdown-item:hover { background: #f8f9ff; }
+    .sdi-name { font-size: 13.5px; font-weight: 600; color: var(--text); }
+    .sdi-meta { font-size: 11.5px; color: var(--text-muted); margin-top: 2px; }
+    .search-dropdown-empty {
+      padding: 14px;
+      font-size: 13px;
+      color: var(--text-muted);
+      text-align: center;
+    }
+
+    .selected-student-card {
+      margin-top: 12px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: none;
+    }
+    .selected-student-card.show { display: flex; gap: 12px; align-items: flex-start; }
+    .ssc-avatar {
+      width: 42px;
+      height: 42px;
+      border-radius: 50%;
+      background: var(--primary);
+      color: #fff;
+      font-weight: 700;
+      font-size: 14px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      flex-shrink: 0;
+    }
+    .ssc-body { flex: 1; min-width: 0; }
+    .ssc-name { font-size: 14.5px; font-weight: 700; color: var(--text); }
+    .ssc-meta {
+      font-size: 12px;
+      color: var(--text-muted);
+      margin-top: 3px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+    }
+    .ssc-change {
+      background: none;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      cursor: pointer;
+      padding: 4px 10px;
+      font-size: 12px;
+      color: var(--primary);
+      font-weight: 600;
+      flex-shrink: 0;
+    }
+    .ssc-change:hover { background: #fff; }
+
+    .field-hint { font-size: 11.5px; color: var(--text-muted); margin-top: 4px; }
+    .serial-readout {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--primary);
+      font-variant-numeric: tabular-nums;
+    }
+
+    /* ── Certificate paper (preview + print template) ───────── */
+    .cert-screen-frame {
+      background: #f4f6f9;
+      border-radius: var(--radius);
+      padding: 24px;
+      display: flex;
+      justify-content: center;
+    }
+    .certificate-paper {
+      background: #ffffff;
+      width: 100%;
+      max-width: 620px;
+      padding: 38px 42px;
+      font-family: Georgia, 'Times New Roman', serif;
+      color: #1a1a2e;
+      box-shadow: 0 1px 4px rgba(0,0,0,.12);
+      min-height: 380px;
+    }
+    .cert-letterhead { text-align: center; margin-bottom: 18px; }
+    .cert-school-name {
+      font-size: 22px;
+      font-weight: 700;
+      letter-spacing: .03em;
+      color: var(--primary-dark);
+    }
+    .cert-school-meta {
+      font-size: 11.5px;
+      color: #5a6472;
+      margin-top: 3px;
+      letter-spacing: .02em;
+    }
+    .cert-divider {
+      height: 2px;
+      background: var(--accent);
+      width: 90px;
+      margin: 10px auto 0;
+    }
+    .cert-title {
+      text-align: center;
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: .08em;
+      margin: 18px 0 4px;
+      text-decoration: underline;
+    }
+    .cert-serial {
+      text-align: center;
+      font-size: 12px;
+      color: #5a6472;
+      margin-bottom: 20px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+    }
+    .cert-body p {
+      font-size: 14.5px;
+      line-height: 1.85;
+      text-align: justify;
+      margin-bottom: 14px;
+    }
+    .cert-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 22px;
+      font-size: 13.5px;
+    }
+    .cert-table td {
+      padding: 7px 4px;
+      border-bottom: 1px solid #e8eaee;
+      vertical-align: top;
+    }
+    .cert-table td:first-child {
+      width: 46%;
+      color: #5a6472;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-size: 12.5px;
+    }
+    .cert-table td:last-child { font-weight: 600; }
+    .cert-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-end;
+      margin-top: 46px;
+      font-size: 13px;
+    }
+    .cert-signature {
+      border-top: 1px solid #1a1a2e;
+      padding-top: 4px;
+      font-family: 'Segoe UI', system-ui, sans-serif;
+      font-weight: 600;
+    }
+    .cert-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 300px;
+      color: var(--text-muted);
+      text-align: center;
+      gap: 8px;
+    }
+    .cert-empty .cert-empty-icon { font-size: 36px; }
+
+    /* ── Issued documents tab ────────────────────────────────── */
+    .issued-toolbar {
+      display: flex;
+      gap: 12px;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 16px;
+    }
+    .badge-type-bonafide { background: #d1ecf1; color: #0c5460; }
+    .badge-type-transfer { background: #fde2e1; color: #92281f; }
+
+    /* ── Print: only the certificate paper is visible ───────── */
+    #printArea { display: none; }
+    @media print {
+      body * { visibility: hidden; }
+      #printArea, #printArea * { visibility: visible; }
+      #printArea {
+        display: block !important;
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+      }
+      #printArea .certificate-paper { box-shadow: none; max-width: 100%; }
+    }
+  </style>
+</head>
+
+<body>
+
+<!-- ══════════════════════════════════════════════════════════
+     SIDEBAR
+══════════════════════════════════════════════════════════ -->
+<aside class="sidebar" id="sidebar">
+  <div class="sidebar-logo">
+    <span>🏫</span>
+    <span class="school-name" id="schoolName">My School ERP</span>
+  </div>
+
+  <ul class="sidebar-nav">
+    <li><a href="dashboard.html" data-page="dashboard">📊 Dashboard</a></li>
+    <li><a href="announcements.html" data-page="announcements">📢 Announcements</a></li>
+
+    <li><span class="nav-section-label">Academic</span></li>
+    <li><a href="teachers.html"     data-page="teachers">👨‍🏫 Teachers</a></li>
+    <li><a href="students.html"     data-page="students">👨‍🎓 Students</a></li>
+    <li><a href="timetable.html"    data-page="timetable">📅 Timetable</a></li>
+
+    <li><span class="nav-section-label">Finance</span></li>
+    <li><a href="fees.html"         data-page="fees">💰 Fee Management</a></li>
+
+    <li><span class="nav-section-label">Results</span></li>
+    <li><a href="marks.html"        data-page="marks">📝 Marks &amp; Results</a></li>
+
+    <li><span class="nav-section-label">Documents</span></li>
+    <li><a href="docs.html"         data-page="docs" class="active">📄 Certificates</a></li>
+
+    <li><span class="nav-section-label">Portals</span></li>
+    <li><a href="../student/portal.html" target="_blank">🔗 Student Portal</a></li>
+    <li><a href="../teacher/portal.html" target="_blank">🔗 Teacher Portal</a></li>
+
+    <li><span class="nav-section-label">System</span></li>
+    <li><a href="team.html"         data-page="team">👥 Team Members</a></li>
+    <li><a href="settings.html"     data-page="settings">⚙️ Settings</a></li>
+  </ul>
+
+  <div class="sidebar-logout">
+    <a href="#" onclick="logoutUser(); return false;" style="color: rgba(255,255,255,.7);">
+      🚪 Logout
+    </a>
+  </div>
+</aside>
+
+<!-- ══════════════════════════════════════════════════════════
+     MAIN CONTENT
+══════════════════════════════════════════════════════════ -->
+<div class="main-content">
+
+  <header class="top-header">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Toggle menu">☰</button>
+      <h1 class="header-title">Certificates</h1>
+    </div>
+    <div class="header-right">
+      <div class="user-chip">
+        <span class="user-chip__name" id="headerUserName">—</span>
+        <div class="user-avatar" id="headerAvatar">?</div>
+      </div>
+      <button class="header-logout" onclick="logoutUser()" title="Logout">🚪</button>
+    </div>
+  </header>
+
+  <main class="page-content" id="pageContent">
+
+    <!-- TAB NAV -->
+    <div class="card" style="margin-bottom:20px;">
+      <div class="tab-nav">
+        <button class="tab-btn active" data-tab="bonafide">🎓 Bonafide Certificate</button>
+        <button class="tab-btn" data-tab="transfer">📜 Transfer Certificate</button>
+        <button class="tab-btn" data-tab="issued">🗂️ Issued Documents</button>
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════
+         TAB 1: BONAFIDE CERTIFICATE
+    ══════════════════════════════════════════════════════ -->
+    <div class="tab-panel active" id="tab-bonafide">
+      <div class="form-preview-grid">
+
+        <!-- Form -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">🎓 Bonafide Certificate Details</span></div>
+          <div class="card-body">
+
+            <div class="form-group student-search-wrap">
+              <label for="bcSearchInput">Search Student *</label>
+              <div class="search-bar" style="width:100%;">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="bcSearchInput" class="form-control" placeholder="Search by name or admission no…" autocomplete="off" style="width:100%;">
+              </div>
+              <div class="search-dropdown" id="bcSearchDropdown"></div>
+
+              <div class="selected-student-card" id="bcSelectedCard">
+                <div class="ssc-avatar" id="bcSscAvatar">?</div>
+                <div class="ssc-body">
+                  <div class="ssc-name" id="bcSscName">—</div>
+                  <div class="ssc-meta">
+                    <span id="bcSscClass">—</span>
+                    <span id="bcSscAdm">—</span>
+                    <span id="bcSscFather">—</span>
+                  </div>
+                </div>
+                <button class="ssc-change" id="bcChangeStudent">Change</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="bcPurpose">Purpose *</label>
+              <select id="bcPurpose" class="form-control">
+                <option value="School Admission">School Admission</option>
+                <option value="Visa">Visa</option>
+                <option value="Bank">Bank</option>
+                <option value="Scholarship">Scholarship</option>
+                <option value="Other">Other</option>
+              </select>
+            </div>
+
+            <div class="form-group" id="bcCustomPurposeGroup" style="display:none;">
+              <label for="bcCustomPurpose">Specify Purpose *</label>
+              <input type="text" id="bcCustomPurpose" class="form-control" placeholder="e.g. Passport application">
+            </div>
+
+            <div class="form-group">
+              <label for="bcDate">Certificate Date *</label>
+              <input type="date" id="bcDate" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label>Serial No.</label><br>
+              <span class="serial-readout" id="bcSerialReadout">Assigned on print</span>
+            </div>
+
+            <button class="btn btn-primary" id="bcGenerateBtn" style="width:100%; justify-content:center;">
+              🖨️ Generate &amp; Print
+            </button>
+          </div>
+        </div>
+
+        <!-- Preview -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">👁️ Live Preview</span></div>
+          <div class="card-body">
+            <div class="cert-screen-frame">
+              <div class="certificate-paper" id="bcPreview">
+                <div class="cert-empty">
+                  <div class="cert-empty-icon">🎓</div>
+                  Search and select a student to preview the certificate
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════
+         TAB 2: TRANSFER CERTIFICATE
+    ══════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="tab-transfer">
+      <div class="form-preview-grid">
+
+        <!-- Form -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">📜 Transfer Certificate Details</span></div>
+          <div class="card-body">
+
+            <div class="form-group student-search-wrap">
+              <label for="tcSearchInput">Search Student *</label>
+              <div class="search-bar" style="width:100%;">
+                <span class="search-icon">🔍</span>
+                <input type="text" id="tcSearchInput" class="form-control" placeholder="Search by name or admission no…" autocomplete="off" style="width:100%;">
+              </div>
+              <div class="search-dropdown" id="tcSearchDropdown"></div>
+
+              <div class="selected-student-card" id="tcSelectedCard">
+                <div class="ssc-avatar" id="tcSscAvatar">?</div>
+                <div class="ssc-body">
+                  <div class="ssc-name" id="tcSscName">—</div>
+                  <div class="ssc-meta">
+                    <span id="tcSscClass">—</span>
+                    <span id="tcSscAdm">—</span>
+                    <span id="tcSscFather">—</span>
+                  </div>
+                </div>
+                <button class="ssc-change" id="tcChangeStudent">Change</button>
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="tcLastClass">Last Class Studied *</label>
+                <input type="text" id="tcLastClass" class="form-control" placeholder="e.g. 10 - A">
+              </div>
+              <div class="form-group">
+                <label for="tcDateOfLeaving">Date of Leaving *</label>
+                <input type="date" id="tcDateOfLeaving" class="form-control">
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="tcReason">Reason for Leaving *</label>
+              <input type="text" id="tcReason" class="form-control" placeholder="e.g. Relocation to another city">
+            </div>
+
+            <div class="form-row">
+              <div class="form-group">
+                <label for="tcFeeClearance">Fee Clearance *</label>
+                <select id="tcFeeClearance" class="form-control">
+                  <option value="Yes">Yes</option>
+                  <option value="No">No</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="tcConduct">Conduct *</label>
+                <select id="tcConduct" class="form-control">
+                  <option value="Good">Good</option>
+                  <option value="Satisfactory">Satisfactory</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label for="tcDateOfIssue">Date of Issue *</label>
+              <input type="date" id="tcDateOfIssue" class="form-control">
+            </div>
+
+            <div class="form-group">
+              <label>Serial No.</label><br>
+              <span class="serial-readout" id="tcSerialReadout">Assigned on print</span>
+            </div>
+
+            <div class="field-hint" style="margin-bottom:12px;">
+              ⚠️ Issuing this certificate will mark the student's status as <strong>"TC Issued"</strong>.
+            </div>
+
+            <button class="btn btn-primary" id="tcGenerateBtn" style="width:100%; justify-content:center;">
+              🖨️ Generate &amp; Print
+            </button>
+          </div>
+        </div>
+
+        <!-- Preview -->
+        <div class="card">
+          <div class="card-header"><span class="card-title">👁️ Live Preview</span></div>
+          <div class="card-body">
+            <div class="cert-screen-frame">
+              <div class="certificate-paper" id="tcPreview">
+                <div class="cert-empty">
+                  <div class="cert-empty-icon">📜</div>
+                  Search and select a student to preview the certificate
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- ══════════════════════════════════════════════════════
+         TAB 3: ISSUED DOCUMENTS
+    ══════════════════════════════════════════════════════ -->
+    <div class="tab-panel" id="tab-issued">
+      <div class="card">
+        <div class="card-header">
+          <span class="card-title">🗂️ Issued Documents Log</span>
+          <button class="btn btn-outline btn-sm" id="exportCsvBtn">⬇️ Export CSV</button>
+        </div>
+        <div class="card-body">
+          <div class="issued-toolbar">
+            <div class="search-bar">
+              <span class="search-icon">🔍</span>
+              <input type="text" id="issuedSearchInput" class="form-control" placeholder="Search by student name or certificate type…">
+            </div>
+          </div>
+          <div class="table-wrapper">
+            <table class="erp-table" id="issuedTable">
+              <thead>
+                <tr>
+                  <th style="width:50px;">S.No</th>
+                  <th>Student Name</th>
+                  <th style="width:100px;">Class</th>
+                  <th style="width:160px;">Certificate Type</th>
+                  <th style="width:120px;">Serial No</th>
+                  <th style="width:120px;">Date Issued</th>
+                  <th style="width:130px;">Issued By</th>
+                  <th style="width:90px;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="issuedBody">
+                <tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🗂️</div>Loading issued documents…</div></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- Hidden print area: populated right before window.print() -->
+<div id="printArea"></div>
+
+<div id="toast-container"></div>
+
+<script>
+// ════════════════════════════════════════════════════════════
+//  Boot
+// ════════════════════════════════════════════════════════════
+checkAdminAuth().then(user => { initDocsPage(user); });
+
+document.getElementById('hamburger').addEventListener('click', function () {
+  document.getElementById('sidebar').classList.toggle('mobile-open');
+});
+
+// ════════════════════════════════════════════════════════════
+//  Shared helpers
+// ════════════════════════════════════════════════════════════
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0,2).join('');
+}
+
+function todayISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function formatDisplayDate(isoStr) {
+  if (!isoStr) return '—';
+  const parts = isoStr.split('-');
+  if (parts.length !== 3) return isoStr;
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${parts[2]} ${months[parseInt(parts[1],10)-1]} ${parts[0]}`;
+}
+
+function formatTimestampDate(ts) {
+  if (!ts) return '—';
+  const date = ts.toDate ? ts.toDate() : new Date(ts);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${String(date.getDate()).padStart(2,'0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function getAcademicYear() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const startYear = m >= 4 ? y : y - 1;
+  return startYear + '-' + String(startYear + 1).slice(-2);
+}
+
+// ════════════════════════════════════════════════════════════
+//  Serial number generation (atomic per-type, per-year counter)
+// ════════════════════════════════════════════════════════════
+async function getNextSerial(type) {
+  const year = new Date().getFullYear();
+  const prefix = type === 'bonafide' ? 'BC' : 'TC';
+  const counterRef = db.collection('counters').doc(type + '_' + year);
+
+  const next = await db.runTransaction(async (tx) => {
+    const snap = await tx.get(counterRef);
+    const current = (snap.exists && snap.data().count) ? snap.data().count : 0;
+    const newCount = current + 1;
+    tx.set(counterRef, { count: newCount, year, type }, { merge: true });
+    return newCount;
+  });
+
+  return `${prefix}-${year}-${String(next).padStart(3, '0')}`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  Certificate template builders
+// ════════════════════════════════════════════════════════════
+function letterheadHtml() {
+  return `
+    <div class="cert-letterhead">
+      <div class="cert-school-name">${escapeHtml(window.__schoolName || 'My School ERP')}</div>
+      <div class="cert-school-meta">${escapeHtml(window.__schoolMeta || 'Empowering Education Through Technology')}</div>
+      <div class="cert-divider"></div>
+    </div>`;
+}
+
+function buildBonafideHTML(d) {
+  return `
+    ${letterheadHtml()}
+    <div class="cert-title">Bonafide Certificate</div>
+    <div class="cert-serial">Serial No: ${escapeHtml(d.serialNo)}</div>
+    <div class="cert-body">
+      <p>This is to certify that <strong>${escapeHtml(d.name)}</strong>, S/D/O <strong>${escapeHtml(d.fatherName)}</strong>, bearing Admission No. <strong>${escapeHtml(d.admissionNo)}</strong> is a bonafide student of this institution studying in Class <strong>${escapeHtml(d.studentClass)}</strong>, Section <strong>${escapeHtml(d.studentSection)}</strong> during the Academic Year <strong>${escapeHtml(d.academicYear)}</strong>.</p>
+      <p>This certificate is issued for the purpose of <strong>${escapeHtml(d.purpose)}</strong>.</p>
+    </div>
+    <div class="cert-footer">
+      <span>${escapeHtml(formatDisplayDate(d.certDate))}</span>
+      <span class="cert-signature">Principal Signature</span>
+    </div>`;
+}
+
+function buildTransferHTML(d) {
+  return `
+    ${letterheadHtml()}
+    <div class="cert-title">Transfer Certificate</div>
+    <div class="cert-serial">Serial No: ${escapeHtml(d.serialNo)}</div>
+    <table class="cert-table">
+      <tr><td>Student's Name</td><td>${escapeHtml(d.name)}</td></tr>
+      <tr><td>Father's / Guardian's Name</td><td>${escapeHtml(d.fatherName)}</td></tr>
+      <tr><td>Admission No.</td><td>${escapeHtml(d.admissionNo)}</td></tr>
+      <tr><td>Class Last Studied</td><td>${escapeHtml(d.lastClassStudied)}</td></tr>
+      <tr><td>Academic Year</td><td>${escapeHtml(d.academicYear)}</td></tr>
+      <tr><td>Date of Leaving</td><td>${escapeHtml(formatDisplayDate(d.dateOfLeaving))}</td></tr>
+      <tr><td>Reason for Leaving</td><td>${escapeHtml(d.reasonForLeaving)}</td></tr>
+      <tr><td>Conduct</td><td>${escapeHtml(d.conduct)}</td></tr>
+      <tr><td>Fee Clearance</td><td>${escapeHtml(d.feeClearance)}</td></tr>
+    </table>
+    <div class="cert-footer">
+      <span>${escapeHtml(formatDisplayDate(d.certDate))}</span>
+      <span class="cert-signature">Principal Signature</span>
+    </div>`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  Print pipeline — print only #printArea, save record after print
+// ════════════════════════════════════════════════════════════
+function printCertificateHtml(html) {
+  const area = document.getElementById('printArea');
+  area.innerHTML = `<div class="certificate-paper">${html}</div>`;
+  window.print();
+}
+
+function printAndSave(type, data, saveFn) {
+  function onAfterPrint() {
+    window.removeEventListener('afterprint', onAfterPrint);
+    saveFn().catch(err => {
+      console.error(err);
+      showToast('Certificate printed, but saving the record failed. Please note the serial number and contact support.', 'error');
+    });
+  }
+  window.addEventListener('afterprint', onAfterPrint);
+  const html = type === 'bonafide' ? buildBonafideHTML(data) : buildTransferHTML(data);
+  printCertificateHtml(html);
+}
+
+// ════════════════════════════════════════════════════════════
+//  Generic student search component
+// ════════════════════════════════════════════════════════════
+function setupStudentSearch(opts) {
+  // opts: { inputId, dropdownId, cardId, onSelect, onClear }
+  const input    = document.getElementById(opts.inputId);
+  const dropdown = document.getElementById(opts.dropdownId);
+  const card     = document.getElementById(opts.cardId);
+
+  function render(matches) {
+    if (!matches.length) {
+      dropdown.innerHTML = `<div class="search-dropdown-empty">No matching students found</div>`;
+      dropdown.classList.add('open');
+      return;
+    }
+    dropdown.innerHTML = matches.map(s => `
+      <div class="search-dropdown-item" data-id="${s.id}">
+        <div class="sdi-name">${escapeHtml(s.name || 'Unnamed')}</div>
+        <div class="sdi-meta">Class ${escapeHtml(s.class || '—')}${s.section ? ' - ' + escapeHtml(s.section) : ''} · Adm No. ${escapeHtml(s.admissionNo || '—')}</div>
+      </div>
+    `).join('');
+    dropdown.classList.add('open');
+    dropdown.querySelectorAll('.search-dropdown-item').forEach(item => {
+      item.addEventListener('click', () => {
+        const student = window.__allStudents.find(s => s.id === item.dataset.id);
+        if (student) {
+          selectStudent(student);
+        }
+      });
+    });
+  }
+
+  function selectStudent(student) {
+    input.value = '';
+    dropdown.classList.remove('open');
+    card.classList.add('show');
+    opts.onSelect(student);
+  }
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { dropdown.classList.remove('open'); return; }
+    const list = (window.__allStudents || []);
+    const matches = list.filter(s =>
+      (s.name || '').toLowerCase().includes(q) ||
+      (s.admissionNo || '').toLowerCase().includes(q)
+    ).slice(0, 8);
+    render(matches);
+  });
+
+  input.addEventListener('focus', () => {
+    if (input.value.trim()) dropdown.classList.add('open');
+  });
+
+  document.addEventListener('click', (e) => {
+    if (!dropdown.contains(e.target) && e.target !== input) {
+      dropdown.classList.remove('open');
+    }
+  });
+
+  document.getElementById(opts.cardId).querySelector('.ssc-change').addEventListener('click', () => {
+    card.classList.remove('show');
+    input.value = '';
+    opts.onClear();
+  });
+}
+
+function fillSelectedCard(prefix, student) {
+  document.getElementById(prefix + 'SscAvatar').textContent = getInitials(student.name);
+  document.getElementById(prefix + 'SscName').textContent = student.name || 'Unnamed';
+  document.getElementById(prefix + 'SscClass').textContent = `Class ${student.class || '—'}${student.section ? ' - ' + student.section : ''}`;
+  document.getElementById(prefix + 'SscAdm').textContent = `Adm No. ${student.admissionNo || '—'}`;
+  document.getElementById(prefix + 'SscFather').textContent = `Father: ${student.fatherName || '—'}`;
+}
+
+// ════════════════════════════════════════════════════════════
+//  TAB SWITCHING
+// ════════════════════════════════════════════════════════════
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+//  MAIN INIT
+// ════════════════════════════════════════════════════════════
+let bcSelectedStudent = null;
+let tcSelectedStudent = null;
+
+function initDocsPage(user) {
+  document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+  document.getElementById('headerAvatar').textContent   = getInitials(user.name || user.email);
+
+  // School name / letterhead meta
+  db.collection('settings').doc('schoolConfig').get().then(doc => {
+    if (doc.exists) {
+      const data = doc.data();
+      if (data.schoolName) {
+        document.getElementById('schoolName').textContent = data.schoolName;
+        window.__schoolName = data.schoolName;
+      }
+      window.__schoolMeta = [data.address, data.phone].filter(Boolean).join(' · ') || window.__schoolMeta;
+    }
+  }).catch(() => {});
+
+  // Default dates
+  document.getElementById('bcDate').value = todayISO();
+  document.getElementById('tcDateOfIssue').value = todayISO();
+  document.getElementById('tcDateOfLeaving').value = todayISO();
+
+  // Load active students once for search
+  window.__allStudents = [];
+  db.collection('students').where('status', '==', 'active').get().then(snap => {
+    window.__allStudents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }).catch(err => {
+    console.error('Could not load students:', err);
+    showToast('Could not load student list for search.', 'error');
+  });
+
+  setupBonafideTab();
+  setupTransferTab();
+  setupIssuedTab();
+}
+
+// ════════════════════════════════════════════════════════════
+//  TAB 1: BONAFIDE
+// ════════════════════════════════════════════════════════════
+function setupBonafideTab() {
+  setupStudentSearch({
+    inputId: 'bcSearchInput',
+    dropdownId: 'bcSearchDropdown',
+    cardId: 'bcSelectedCard',
+    onSelect: (student) => {
+      bcSelectedStudent = student;
+      fillSelectedCard('bc', student);
+      updateBonafidePreview();
+    },
+    onClear: () => {
+      bcSelectedStudent = null;
+      updateBonafidePreview();
+    }
+  });
+
+  const purposeSelect = document.getElementById('bcPurpose');
+  const customGroup   = document.getElementById('bcCustomPurposeGroup');
+  const customInput   = document.getElementById('bcCustomPurpose');
+
+  purposeSelect.addEventListener('change', () => {
+    customGroup.style.display = purposeSelect.value === 'Other' ? 'block' : 'none';
+    updateBonafidePreview();
+  });
+  customInput.addEventListener('input', updateBonafidePreview);
+  document.getElementById('bcDate').addEventListener('change', updateBonafidePreview);
+
+  document.getElementById('bcGenerateBtn').addEventListener('click', generateBonafide);
+}
+
+function currentBonafidePurpose() {
+  const sel = document.getElementById('bcPurpose').value;
+  if (sel === 'Other') return document.getElementById('bcCustomPurpose').value.trim();
+  return sel;
+}
+
+function updateBonafidePreview() {
+  const preview = document.getElementById('bcPreview');
+  if (!bcSelectedStudent) {
+    preview.innerHTML = `<div class="cert-empty"><div class="cert-empty-icon">🎓</div>Search and select a student to preview the certificate</div>`;
+    return;
+  }
+  const data = {
+    name: bcSelectedStudent.name || '—',
+    fatherName: bcSelectedStudent.fatherName || '—',
+    admissionNo: bcSelectedStudent.admissionNo || '—',
+    studentClass: bcSelectedStudent.class || '—',
+    studentSection: bcSelectedStudent.section || '—',
+    academicYear: getAcademicYear(),
+    purpose: currentBonafidePurpose() || '—',
+    certDate: document.getElementById('bcDate').value || todayISO(),
+    serialNo: '(assigned on print)'
+  };
+  preview.innerHTML = buildBonafideHTML(data);
+}
+
+async function generateBonafide() {
+  if (!bcSelectedStudent) { showToast('Please select a student first.', 'error'); return; }
+  const purpose = currentBonafidePurpose();
+  if (!purpose) { showToast('Please select or specify a purpose.', 'error'); return; }
+  const certDate = document.getElementById('bcDate').value;
+  if (!certDate) { showToast('Please set a certificate date.', 'error'); return; }
+
+  const btn = document.getElementById('bcGenerateBtn');
+  btn.disabled = true;
+  btn.textContent = 'Preparing…';
+
+  try {
+    const serialNo = await getNextSerial('bonafide');
+    document.getElementById('bcSerialReadout').textContent = serialNo;
+
+    const data = {
+      studentId: bcSelectedStudent.id,
+      name: bcSelectedStudent.name || '—',
+      fatherName: bcSelectedStudent.fatherName || '—',
+      admissionNo: bcSelectedStudent.admissionNo || '—',
+      studentClass: bcSelectedStudent.class || '—',
+      studentSection: bcSelectedStudent.section || '—',
+      academicYear: getAcademicYear(),
+      purpose,
+      certDate,
+      serialNo
+    };
+
+    printAndSave('bonafide', data, async () => {
+      await db.collection('certificates').add({
+        studentId: data.studentId,
+        studentName: data.name,
+        fatherName: data.fatherName,
+        admissionNo: data.admissionNo,
+        studentClass: data.studentClass,
+        studentSection: data.studentSection,
+        academicYear: data.academicYear,
+        type: 'bonafide',
+        serialNo: data.serialNo,
+        certDate: data.certDate,
+        purpose: data.purpose,
+        issuedDate: firebase.firestore.FieldValue.serverTimestamp(),
+        issuedBy: (window.currentUser && window.currentUser.name) ? window.currentUser.name : 'Admin'
+      });
+      await logActivity('Bonafide certificate issued to: ' + data.name + ' (' + data.serialNo + ')');
+      showToast('Bonafide certificate issued for ' + data.name + '.', 'success');
+    });
+  } catch (err) {
+    console.error(err);
+    showToast('Could not generate the certificate serial number. Try again.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🖨️ Generate & Print';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  TAB 2: TRANSFER CERTIFICATE
+// ════════════════════════════════════════════════════════════
+function setupTransferTab() {
+  setupStudentSearch({
+    inputId: 'tcSearchInput',
+    dropdownId: 'tcSearchDropdown',
+    cardId: 'tcSelectedCard',
+    onSelect: (student) => {
+      tcSelectedStudent = student;
+      fillSelectedCard('tc', student);
+      const lastClassField = document.getElementById('tcLastClass');
+      if (!lastClassField.value) {
+        lastClassField.value = `${student.class || ''}${student.section ? ' - ' + student.section : ''}`.trim();
+      }
+      updateTransferPreview();
+    },
+    onClear: () => {
+      tcSelectedStudent = null;
+      updateTransferPreview();
+    }
+  });
+
+  ['tcLastClass','tcDateOfLeaving','tcReason','tcFeeClearance','tcConduct','tcDateOfIssue'].forEach(id => {
+    document.getElementById(id).addEventListener('input', updateTransferPreview);
+    document.getElementById(id).addEventListener('change', updateTransferPreview);
+  });
+
+  document.getElementById('tcGenerateBtn').addEventListener('click', generateTransfer);
+}
+
+function updateTransferPreview() {
+  const preview = document.getElementById('tcPreview');
+  if (!tcSelectedStudent) {
+    preview.innerHTML = `<div class="cert-empty"><div class="cert-empty-icon">📜</div>Search and select a student to preview the certificate</div>`;
+    return;
+  }
+  const data = {
+    name: tcSelectedStudent.name || '—',
+    fatherName: tcSelectedStudent.fatherName || '—',
+    admissionNo: tcSelectedStudent.admissionNo || '—',
+    lastClassStudied: document.getElementById('tcLastClass').value || '—',
+    academicYear: getAcademicYear(),
+    dateOfLeaving: document.getElementById('tcDateOfLeaving').value || '—',
+    reasonForLeaving: document.getElementById('tcReason').value || '—',
+    conduct: document.getElementById('tcConduct').value,
+    feeClearance: document.getElementById('tcFeeClearance').value,
+    certDate: document.getElementById('tcDateOfIssue').value || todayISO(),
+    serialNo: '(assigned on print)'
+  };
+  preview.innerHTML = buildTransferHTML(data);
+}
+
+async function generateTransfer() {
+  if (!tcSelectedStudent) { showToast('Please select a student first.', 'error'); return; }
+  const lastClass = document.getElementById('tcLastClass').value.trim();
+  const dateOfLeaving = document.getElementById('tcDateOfLeaving').value;
+  const reason = document.getElementById('tcReason').value.trim();
+  const dateOfIssue = document.getElementById('tcDateOfIssue').value;
+
+  if (!lastClass || !dateOfLeaving || !reason || !dateOfIssue) {
+    showToast('Please fill in all required transfer certificate fields.', 'error');
+    return;
+  }
+
+  if (!confirm(`Issue Transfer Certificate for ${tcSelectedStudent.name}? This will mark the student's status as "TC Issued".`)) {
+    return;
+  }
+
+  const btn = document.getElementById('tcGenerateBtn');
+  btn.disabled = true;
+  btn.textContent = 'Preparing…';
+
+  try {
+    const serialNo = await getNextSerial('transfer');
+    document.getElementById('tcSerialReadout').textContent = serialNo;
+
+    const data = {
+      studentId: tcSelectedStudent.id,
+      name: tcSelectedStudent.name || '—',
+      fatherName: tcSelectedStudent.fatherName || '—',
+      admissionNo: tcSelectedStudent.admissionNo || '—',
+      lastClassStudied: lastClass,
+      academicYear: getAcademicYear(),
+      dateOfLeaving,
+      reasonForLeaving: reason,
+      conduct: document.getElementById('tcConduct').value,
+      feeClearance: document.getElementById('tcFeeClearance').value,
+      certDate: dateOfIssue,
+      serialNo
+    };
+
+    printAndSave('transfer', data, async () => {
+      await db.collection('certificates').add({
+        studentId: data.studentId,
+        studentName: data.name,
+        fatherName: data.fatherName,
+        admissionNo: data.admissionNo,
+        studentClass: data.lastClassStudied,
+        studentSection: '',
+        academicYear: data.academicYear,
+        type: 'transfer',
+        serialNo: data.serialNo,
+        certDate: data.certDate,
+        dateOfLeaving: data.dateOfLeaving,
+        reasonForLeaving: data.reasonForLeaving,
+        lastClassStudied: data.lastClassStudied,
+        feeClearance: data.feeClearance,
+        conduct: data.conduct,
+        issuedDate: firebase.firestore.FieldValue.serverTimestamp(),
+        issuedBy: (window.currentUser && window.currentUser.name) ? window.currentUser.name : 'Admin'
+      });
+
+      await db.collection('students').doc(data.studentId).update({ status: 'TC Issued' });
+
+      // Remove from in-memory active list so they no longer surface in search
+      window.__allStudents = (window.__allStudents || []).filter(s => s.id !== data.studentId);
+
+      await logActivity('Transfer Certificate issued to: ' + data.name + ' (' + data.serialNo + ')');
+      showToast('Transfer certificate issued for ' + data.name + '.', 'success');
+    });
+  } catch (err) {
+    console.error(err);
+    showToast('Could not generate the transfer certificate. Try again.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '🖨️ Generate & Print';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  TAB 3: ISSUED DOCUMENTS LOG
+// ════════════════════════════════════════════════════════════
+let __allCertificates = [];
+
+function setupIssuedTab() {
+  db.collection('certificates').orderBy('issuedDate', 'desc').onSnapshot(snap => {
+    __allCertificates = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    renderIssuedTable();
+  }, err => {
+    console.error(err);
+    document.getElementById('issuedBody').innerHTML =
+      `<tr><td colspan="8"><div class="empty-state">Could not load issued documents.</div></td></tr>`;
+  });
+
+  document.getElementById('issuedSearchInput').addEventListener('input', renderIssuedTable);
+  document.getElementById('exportCsvBtn').addEventListener('click', exportIssuedCsv);
+}
+
+function filteredCertificates() {
+  const q = document.getElementById('issuedSearchInput').value.trim().toLowerCase();
+  if (!q) return __allCertificates;
+  return __allCertificates.filter(c =>
+    (c.studentName || '').toLowerCase().includes(q) ||
+    (c.type || '').toLowerCase().includes(q) ||
+    (c.serialNo || '').toLowerCase().includes(q)
+  );
+}
+
+function renderIssuedTable() {
+  const tbody = document.getElementById('issuedBody');
+  const list = filteredCertificates();
+
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="8"><div class="empty-state"><div class="empty-icon">🗂️</div>No issued documents found.</div></td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = '';
+  list.forEach((c, i) => {
+    const typeLabel = c.type === 'bonafide' ? 'Bonafide' : 'Transfer Certificate';
+    const typeBadgeClass = c.type === 'bonafide' ? 'badge-type-bonafide' : 'badge-type-transfer';
+    const classLabel = c.studentClass ? c.studentClass + (c.studentSection ? ' - ' + c.studentSection : '') : '—';
+
+    const tr = document.createElement('tr');
+    tr.innerHTML = `
+      <td>${i + 1}</td>
+      <td>${escapeHtml(c.studentName || '—')}</td>
+      <td>${escapeHtml(classLabel)}</td>
+      <td><span class="badge ${typeBadgeClass}">${typeLabel}</span></td>
+      <td>${escapeHtml(c.serialNo || '—')}</td>
+      <td>${formatTimestampDate(c.issuedDate)}</td>
+      <td>${escapeHtml(c.issuedBy || '—')}</td>
+      <td><button class="btn btn-outline btn-sm" onclick="reprintCertificate('${c.id}')">🖨️ Reprint</button></td>
+    `;
+    tbody.appendChild(tr);
+  });
+}
+
+window.reprintCertificate = function (id) {
+  const c = __allCertificates.find(x => x.id === id);
+  if (!c) { showToast('Could not find that certificate record.', 'error'); return; }
+
+  let html;
+  if (c.type === 'bonafide') {
+    html = buildBonafideHTML({
+      name: c.studentName, fatherName: c.fatherName, admissionNo: c.admissionNo,
+      studentClass: c.studentClass, studentSection: c.studentSection,
+      academicYear: c.academicYear, purpose: c.purpose, certDate: c.certDate,
+      serialNo: c.serialNo
+    });
+  } else {
+    html = buildTransferHTML({
+      name: c.studentName, fatherName: c.fatherName, admissionNo: c.admissionNo,
+      lastClassStudied: c.lastClassStudied, academicYear: c.academicYear,
+      dateOfLeaving: c.dateOfLeaving, reasonForLeaving: c.reasonForLeaving,
+      conduct: c.conduct, feeClearance: c.feeClearance, certDate: c.certDate,
+      serialNo: c.serialNo
+    });
+  }
+  printCertificateHtml(html);
+  logActivity('Reprinted ' + (c.type === 'bonafide' ? 'Bonafide certificate' : 'Transfer Certificate') + ' for: ' + c.studentName + ' (' + c.serialNo + ')');
+};
+
+function exportIssuedCsv() {
+  const list = filteredCertificates();
+  if (!list.length) { showToast('No records to export.', 'warning'); return; }
+
+  const headers = ['S.No','Student Name','Class','Certificate Type','Serial No','Date Issued','Issued By'];
+  const rows = list.map((c, i) => [
+    i + 1,
+    c.studentName || '',
+    c.studentClass ? c.studentClass + (c.studentSection ? ' - ' + c.studentSection : '') : '',
+    c.type === 'bonafide' ? 'Bonafide' : 'Transfer Certificate',
+    c.serialNo || '',
+    formatTimestampDate(c.issuedDate),
+    c.issuedBy || ''
+  ]);
+
+  function csvEscape(val) {
+    const s = String(val);
+    return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+  }
+
+  const csv = [headers, ...rows].map(row => row.map(csvEscape).join(',')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'issued_documents_' + todayISO() + '.csv';
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+
+  showToast('CSV exported successfully.', 'success');
+}
+</script>
+</body>
+</html>

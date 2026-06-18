@@ -78,7 +78,11 @@
       flex-wrap: wrap; margin-bottom: 20px;
     }
     .controls-row select, .controls-row input { min-width: 130px; }
-    .controls-row .max-marks-input { max-width: 110px; }
+    /* BUGFIX: min-width above (130px) was beating this max-width (110px) per the
+       CSS spec's min/max conflict resolution rule, so the Max Marks field always
+       rendered at 130px regardless of max-width. Reset min-width here so the
+       100px width below actually takes effect. */
+    .controls-row .max-marks-input { min-width: 0; width: 110px; max-width: 110px; }
 
     .marks-input { width: 80px; padding: 6px 8px; text-align: center; }
     .remarks-input { width: 100%; min-width: 140px; padding: 6px 8px; }
@@ -613,7 +617,709 @@
 
 <!-- ═══════════════════════════════════════════════ SCRIPT -->
 <script>
-// JS will be added here
+// ════════════════════════════════════════════════════════════
+//  Boot
+// ════════════════════════════════════════════════════════════
+checkAdminAuth().then(user => { initMarksPage(user); });
+
+document.getElementById('hamburger').addEventListener('click', function () {
+  document.getElementById('sidebar').classList.toggle('mobile-open');
+});
+
+// ════════════════════════════════════════════════════════════
+//  Live clock (same pattern as dashboard.html)
+// ════════════════════════════════════════════════════════════
+(function startClock() {
+  const el = document.getElementById('liveClock');
+  const days   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  function tick() {
+    const d = new Date();
+    const day  = days[d.getDay()];
+    const date = String(d.getDate()).padStart(2,'0');
+    const mon  = months[d.getMonth()];
+    const yr   = d.getFullYear();
+    let   h    = d.getHours();
+    const ampm = h >= 12 ? 'PM' : 'AM';
+    h = h % 12 || 12;
+    const mm = String(d.getMinutes()).padStart(2,'0');
+    const ss = String(d.getSeconds()).padStart(2,'0');
+    el.textContent = `${day}, ${date} ${mon} ${yr} | ${String(h).padStart(2,'0')}:${mm}:${ss} ${ampm}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+})();
+
+// ════════════════════════════════════════════════════════════
+//  Shared helpers
+// ════════════════════════════════════════════════════════════
+function escapeHtml(str) {
+  return String(str == null ? '' : str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function getInitials(name) {
+  if (!name) return '?';
+  return name.trim().split(/\s+/).map(w => w[0].toUpperCase()).slice(0,2).join('');
+}
+
+function todayISO() {
+  const d = new Date();
+  return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+}
+
+function formatTimestampDate(ts) {
+  if (!ts) return '—';
+  const date = ts.toDate ? ts.toDate() : new Date(ts);
+  const months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  return `${String(date.getDate()).padStart(2,'0')} ${months[date.getMonth()]} ${date.getFullYear()}`;
+}
+
+function getAcademicYear() {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = d.getMonth() + 1;
+  const startYear = m >= 4 ? y : y - 1;
+  return startYear + '-' + String(startYear + 1).slice(-2);
+}
+
+function slugify(str) {
+  return String(str || '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
+}
+
+function gradeFromPercentage(pct) {
+  if (pct == null || isNaN(pct)) return '—';
+  if (pct >= 90) return 'A+';
+  if (pct >= 75) return 'A';
+  if (pct >= 60) return 'B+';
+  if (pct >= 45) return 'B';
+  if (pct >= 33) return 'C';
+  if (pct >= 21) return 'D';
+  return 'F';
+}
+
+function gradeClass(grade) {
+  if (!grade || grade === '—') return 'grade-dash';
+  return 'grade-' + grade.replace('+', 'plus');
+}
+
+// ════════════════════════════════════════════════════════════
+//  Page tab switching
+// ════════════════════════════════════════════════════════════
+document.querySelectorAll('.page-tab').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.page-tab').forEach(b => b.classList.remove('active'));
+    document.querySelectorAll('.page-tab-panel').forEach(p => p.classList.remove('active'));
+    btn.classList.add('active');
+    document.getElementById('ptab-' + btn.dataset.ptab).classList.add('active');
+  });
+});
+
+// ════════════════════════════════════════════════════════════
+//  Default subject list (no per-class subject config in this build)
+// ════════════════════════════════════════════════════════════
+const DEFAULT_SUBJECTS = [
+  'English', 'Mathematics', 'Science', 'Social Studies',
+  'Hindi', 'Computer Science', 'Environmental Studies', 'General Knowledge'
+];
+
+function populateSubjectDropdown() {
+  const sel = document.getElementById('emSubject');
+  DEFAULT_SUBJECTS.forEach(subj => {
+    const opt = document.createElement('option');
+    opt.value = subj;
+    opt.textContent = subj;
+    sel.appendChild(opt);
+  });
+}
+
+// ════════════════════════════════════════════════════════════
+//  MAIN INIT
+// ════════════════════════════════════════════════════════════
+let rcAllStudents = []; // active students cache, used by Report Cards tab
+
+function initMarksPage(user) {
+  document.getElementById('headerUserName').textContent = user.name || user.email || 'Admin';
+  document.getElementById('headerAvatar').textContent   = getInitials(user.name || user.email);
+
+  db.collection('settings').doc('schoolConfig').get().then(doc => {
+    if (doc.exists && doc.data().schoolName) {
+      document.getElementById('schoolName').textContent = doc.data().schoolName;
+      window.__schoolName = doc.data().schoolName;
+    }
+  }).catch(() => {});
+
+  populateSubjectDropdown();
+
+  db.collection('students').where('status', '==', 'active').get().then(snap => {
+    rcAllStudents = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+  }).catch(err => {
+    console.error('Could not load students:', err);
+    showToast('Could not load student list.', 'error');
+  });
+
+  setupEnterMarksTab();
+  setupReportCardsTab();
+  setupAnalysisTab();
+}
+
+// ════════════════════════════════════════════════════════════
+//  TAB 1: ENTER MARKS
+// ════════════════════════════════════════════════════════════
+let emStudents = [];
+let emExistingMarks = {};
+
+function setupEnterMarksTab() {
+  document.getElementById('loadStudentsBtn').addEventListener('click', loadMarksStudents);
+  document.getElementById('saveAllMarksBtn').addEventListener('click', saveAllMarks);
+}
+
+async function loadMarksStudents() {
+  const cls       = document.getElementById('emClass').value;
+  const sec       = document.getElementById('emSection').value;
+  const subject   = document.getElementById('emSubject').value;
+  const examType  = document.getElementById('emExamType').value;
+  const maxMarks  = parseInt(document.getElementById('emMaxMarks').value, 10);
+
+  if (!cls || !sec || !subject || !examType || !maxMarks || maxMarks < 1) {
+    showToast('Please select class, section, subject, exam type and a valid max marks.', 'error');
+    return;
+  }
+
+  const tbody    = document.getElementById('marksTableBody');
+  const statusEl = document.getElementById('marksTableStatus');
+  tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="ei">⏳</div>Loading students…</div></td></tr>`;
+  document.getElementById('marksSaveFooter').style.display = 'none';
+
+  try {
+    const studentsSnap = await db.collection('students')
+      .where('class', '==', cls).where('section', '==', sec).where('status', '==', 'active')
+      .get();
+
+    emStudents = studentsSnap.docs.map(d => ({ id: d.id, ...d.data() }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+    if (!emStudents.length) {
+      tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state"><div class="ei">🙁</div>No active students found in Class ${escapeHtml(cls)} - ${escapeHtml(sec)}.</div></td></tr>`;
+      statusEl.textContent = '';
+      return;
+    }
+
+    const marksSnap = await db.collection('marks')
+      .where('class', '==', cls).where('section', '==', sec)
+      .where('subject', '==', subject).where('examType', '==', examType)
+      .get();
+
+    emExistingMarks = {};
+    marksSnap.forEach(d => { emExistingMarks[d.data().studentId] = d.data(); });
+
+    renderMarksRows(maxMarks);
+    statusEl.textContent = `${emStudents.length} student(s) · ${Object.keys(emExistingMarks).length} already entered`;
+    document.getElementById('marksSaveFooter').style.display = 'flex';
+  } catch (err) {
+    console.error(err);
+    tbody.innerHTML = `<tr><td colspan="6"><div class="empty-state">Could not load students. Try again.</div></td></tr>`;
+  }
+}
+
+function renderMarksRows(maxMarks) {
+  const tbody = document.getElementById('marksTableBody');
+  tbody.innerHTML = '';
+
+  emStudents.forEach((s, i) => {
+    const existing  = emExistingMarks[s.id];
+    const marksVal  = existing ? existing.marksObtained : '';
+    const remarksVal = existing ? (existing.remarks || '') : '';
+
+    const tr = document.createElement('tr');
+    tr.dataset.studentId = s.id;
+    tr.innerHTML = `
+      <td class="sno-cell">${i + 1}</td>
+      <td>${escapeHtml(s.name || '—')}${existing ? '<span class="saved-pill">✓ saved</span>' : ''}</td>
+      <td>${escapeHtml(s.admissionNo || '—')}</td>
+      <td><input type="text" class="form-control marks-input" value="${escapeHtml(marksVal)}" placeholder="0-${maxMarks} or AB"></td>
+      <td><span class="grade-badge ${gradeClass(existing ? existing.grade : '—')}">${existing ? existing.grade : '—'}</span></td>
+      <td><input type="text" class="form-control remarks-input" value="${escapeHtml(remarksVal)}" placeholder="Optional remarks"></td>
+    `;
+    tbody.appendChild(tr);
+
+    const marksInput = tr.querySelector('.marks-input');
+    const gradeBadge  = tr.querySelector('.grade-badge');
+    marksInput.addEventListener('input', () => {
+      const { grade } = computeMarkGrade(marksInput.value, maxMarks);
+      gradeBadge.className = 'grade-badge ' + gradeClass(grade);
+      gradeBadge.textContent = grade;
+    });
+  });
+}
+
+function computeMarkGrade(rawVal, maxMarks) {
+  const val = String(rawVal).trim().toUpperCase();
+  if (!val) return { obtained: null, grade: '—' };
+  if (val === 'AB') return { obtained: 'AB', grade: '—' };
+  const num = parseFloat(val);
+  if (isNaN(num)) return { obtained: null, grade: '—' };
+  const pct = (num / maxMarks) * 100;
+  return { obtained: num, grade: gradeFromPercentage(pct) };
+}
+
+async function saveAllMarks() {
+  const cls      = document.getElementById('emClass').value;
+  const sec      = document.getElementById('emSection').value;
+  const subject  = document.getElementById('emSubject').value;
+  const examType = document.getElementById('emExamType').value;
+  const maxMarks = parseInt(document.getElementById('emMaxMarks').value, 10);
+
+  const rows = Array.from(document.querySelectorAll('#marksTableBody tr'));
+  const entries = [];
+
+  for (const row of rows) {
+    const studentId = row.dataset.studentId;
+    if (!studentId) continue;
+    const marksInput   = row.querySelector('.marks-input');
+    const remarksInput = row.querySelector('.remarks-input');
+    const { obtained, grade } = computeMarkGrade(marksInput.value, maxMarks);
+    if (obtained === null) continue; // skip rows left blank
+    const student = emStudents.find(s => s.id === studentId);
+    entries.push({
+      studentId, studentName: student.name || '', admissionNo: student.admissionNo || '',
+      class: cls, section: sec, subject, examType, maxMarks,
+      marksObtained: obtained, grade, remarks: remarksInput.value.trim()
+    });
+  }
+
+  if (!entries.length) {
+    showToast('Enter at least one mark before saving.', 'warning');
+    return;
+  }
+
+  const btn = document.getElementById('saveAllMarksBtn');
+  btn.disabled = true;
+  btn.textContent = 'Saving…';
+
+  try {
+    const batch = db.batch();
+    entries.forEach(e => {
+      const docId = `${e.studentId}_${slugify(e.subject)}_${slugify(e.examType)}`;
+      const ref = db.collection('marks').doc(docId);
+      batch.set(ref, {
+        ...e,
+        enteredBy: (window.currentUser && window.currentUser.name) ? window.currentUser.name : 'Admin',
+        enteredDate: firebase.firestore.FieldValue.serverTimestamp()
+      }, { merge: true });
+    });
+    await batch.commit();
+    await logActivity(`Marks entered: Class ${cls}-${sec}, ${subject} (${examType}) — ${entries.length} student(s)`);
+    showToast(`Saved marks for ${entries.length} student(s).`, 'success');
+    loadMarksStudents(); // refresh "saved" indicators
+  } catch (err) {
+    console.error(err);
+    showToast('Could not save marks. Try again.', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = '💾 Save All Marks';
+  }
+}
+
+// ════════════════════════════════════════════════════════════
+//  TAB 2: REPORT CARDS
+// ════════════════════════════════════════════════════════════
+let rcCurrentStudent = null;
+let rcCurrentResults = null;
+const EXAM_COLUMNS = ['Unit Test 1', 'Unit Test 2', 'Half Yearly', 'Annual'];
+
+function setupReportCardsTab() {
+  const input = document.getElementById('rcSearchInput');
+  const box   = document.getElementById('rcSuggestions');
+
+  input.addEventListener('input', () => {
+    const q = input.value.trim().toLowerCase();
+    if (!q) { box.classList.remove('show'); return; }
+    const matches = rcAllStudents.filter(s =>
+      (s.name || '').toLowerCase().includes(q) || (s.admissionNo || '').toLowerCase().includes(q)
+    ).slice(0, 8);
+    renderRcSuggestions(matches);
+  });
+
+  input.addEventListener('focus', () => { if (input.value.trim()) box.classList.add('show'); });
+
+  document.addEventListener('click', (e) => {
+    if (!box.contains(e.target) && e.target !== input) box.classList.remove('show');
+  });
+
+  document.getElementById('rcLoadBatchBtn').addEventListener('click', loadClassRoster);
+  document.getElementById('printReportCardBtn').addEventListener('click', printReportCard);
+}
+
+function renderRcSuggestions(matches) {
+  const box = document.getElementById('rcSuggestions');
+  if (!matches.length) {
+    box.innerHTML = `<div class="suggestion-empty">No matching students found</div>`;
+    box.classList.add('show');
+    return;
+  }
+  box.innerHTML = matches.map(s => `
+    <div class="suggestion-item" data-id="${s.id}">
+      <div class="suggestion-avatar-initials">${getInitials(s.name)}</div>
+      <div>
+        <div class="suggestion-name">${escapeHtml(s.name || 'Unnamed')}</div>
+        <div class="suggestion-meta">Class ${escapeHtml(s.class || '—')}${s.section ? ' - ' + escapeHtml(s.section) : ''} · Adm No. ${escapeHtml(s.admissionNo || '—')}</div>
+      </div>
+    </div>
+  `).join('');
+  box.classList.add('show');
+  box.querySelectorAll('.suggestion-item').forEach(item => {
+    item.addEventListener('click', () => {
+      const student = rcAllStudents.find(s => s.id === item.dataset.id);
+      box.classList.remove('show');
+      document.getElementById('rcSearchInput').value = '';
+      if (student) showReportCard(student);
+    });
+  });
+}
+
+async function loadClassRoster() {
+  const cls = document.getElementById('rcBatchClass').value;
+  const sec = document.getElementById('rcBatchSection').value;
+  if (!cls || !sec) { showToast('Select both class and section.', 'error'); return; }
+
+  const list = rcAllStudents.filter(s => s.class === cls && s.section === sec)
+    .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+
+  const card   = document.getElementById('rcBatchListCard');
+  const listEl = document.getElementById('rcBatchList');
+  document.getElementById('rcBatchCount').textContent = `${list.length} student(s)`;
+
+  if (!list.length) {
+    listEl.innerHTML = `<div class="empty-state"><div class="ei">🙁</div>No active students in this class/section.</div>`;
+  } else {
+    listEl.innerHTML = list.map(s => `
+      <div class="batch-rc-item">
+        <div><strong>${escapeHtml(s.name || 'Unnamed')}</strong> <span style="color:var(--text-muted);font-size:12.5px;">· Adm No. ${escapeHtml(s.admissionNo || '—')}</span></div>
+        <button class="btn btn-outline btn-sm" data-id="${s.id}">📄 View Report Card</button>
+      </div>
+    `).join('');
+    listEl.querySelectorAll('button[data-id]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const student = rcAllStudents.find(s => s.id === btn.dataset.id);
+        if (student) showReportCard(student);
+      });
+    });
+  }
+  card.style.display = 'block';
+}
+
+async function showReportCard(student) {
+  rcCurrentStudent = student;
+  const preview = document.getElementById('reportCardPreview');
+  preview.classList.add('show');
+  preview.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  document.getElementById('rcHero').innerHTML = `
+    <div class="rc-avatar-initials">${getInitials(student.name)}</div>
+    <div>
+      <div class="rc-name">${escapeHtml(student.name || 'Unnamed')}</div>
+      <div class="rc-meta">Class ${escapeHtml(student.class || '—')}${student.section ? ' - ' + escapeHtml(student.section) : ''} · Adm No. ${escapeHtml(student.admissionNo || '—')} · Academic Year ${getAcademicYear()}</div>
+    </div>
+  `;
+  document.getElementById('rcMarksBody').innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">Loading marks…</td></tr>`;
+  document.getElementById('rcTotalMarks').textContent = '—';
+  document.getElementById('rcPercentage').textContent = '—';
+  document.getElementById('rcOverallGrade').innerHTML = '—';
+  document.getElementById('rcClassRank').textContent  = '—';
+  document.getElementById('rcTeacherRemarks').value   = '';
+  document.getElementById('rcPrincipalRemarks').value = '';
+
+  try {
+    const snap = await db.collection('marks').where('studentId', '==', student.id).get();
+    const marksDocs = snap.docs.map(d => d.data());
+    const results = buildStudentSubjectSummary(marksDocs);
+    rcCurrentResults = results;
+    renderRcMarksTable(results);
+
+    document.getElementById('rcTotalMarks').textContent = `${results.totalObtained} / ${results.totalMax}`;
+    document.getElementById('rcPercentage').textContent = results.totalMax ? results.percentage.toFixed(1) + '%' : '—';
+    document.getElementById('rcOverallGrade').innerHTML  = `<span class="grade-badge ${gradeClass(results.overallGrade)}">${results.overallGrade}</span>`;
+
+    const rank = await computeClassRank(student);
+    document.getElementById('rcClassRank').textContent = rank ? `${rank.rank} / ${rank.total}` : '—';
+  } catch (err) {
+    console.error(err);
+    document.getElementById('rcMarksBody').innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--danger);">Could not load marks.</td></tr>`;
+  }
+}
+
+function buildStudentSubjectSummary(marksDocs) {
+  const bySubject = {};
+  marksDocs.forEach(m => {
+    if (!bySubject[m.subject]) bySubject[m.subject] = {};
+    bySubject[m.subject][m.examType] = m;
+  });
+
+  let totalObtained = 0, totalMax = 0;
+  const subjects = Object.keys(bySubject).sort();
+
+  const rows = subjects.map(subject => {
+    const exams = bySubject[subject];
+    let subTotalObtained = 0, subTotalMax = 0;
+    const cells = EXAM_COLUMNS.map(col => {
+      const e = exams[col];
+      if (!e || e.marksObtained === 'AB' || e.marksObtained == null) return '—';
+      subTotalObtained += e.marksObtained;
+      subTotalMax += e.maxMarks;
+      return `${e.marksObtained}/${e.maxMarks}`;
+    });
+    totalObtained += subTotalObtained;
+    totalMax += subTotalMax;
+    const pct = subTotalMax ? (subTotalObtained / subTotalMax) * 100 : null;
+    const grade = pct === null ? '—' : gradeFromPercentage(pct);
+    return { subject, cells, total: subTotalMax ? `${subTotalObtained}/${subTotalMax}` : '—', grade };
+  });
+
+  const percentage  = totalMax ? (totalObtained / totalMax) * 100 : 0;
+  const overallGrade = totalMax ? gradeFromPercentage(percentage) : '—';
+  return { rows, totalObtained, totalMax, percentage, overallGrade };
+}
+
+function renderRcMarksTable(results) {
+  const tbody = document.getElementById('rcMarksBody');
+  if (!results.rows.length) {
+    tbody.innerHTML = `<tr><td colspan="7" style="text-align:center;color:var(--text-muted);">No marks recorded yet for this student.</td></tr>`;
+    return;
+  }
+  tbody.innerHTML = results.rows.map(r => `
+    <tr>
+      <td>${escapeHtml(r.subject)}</td>
+      ${r.cells.map(c => `<td>${escapeHtml(c)}</td>`).join('')}
+      <td><strong>${escapeHtml(r.total)}</strong></td>
+      <td><span class="grade-badge ${gradeClass(r.grade)}">${r.grade}</span></td>
+    </tr>
+  `).join('');
+}
+
+async function computeClassRank(student) {
+  if (!student.class || !student.section) return null;
+  try {
+    const snap = await db.collection('marks')
+      .where('class', '==', student.class).where('section', '==', student.section)
+      .get();
+
+    const byStudent = {};
+    snap.forEach(d => {
+      const m = d.data();
+      if (m.marksObtained === 'AB' || m.marksObtained == null) return;
+      if (!byStudent[m.studentId]) byStudent[m.studentId] = { obtained: 0, max: 0 };
+      byStudent[m.studentId].obtained += m.marksObtained;
+      byStudent[m.studentId].max += m.maxMarks;
+    });
+
+    const ranked = Object.entries(byStudent)
+      .map(([id, v]) => ({ id, pct: v.max ? (v.obtained / v.max) * 100 : 0 }))
+      .sort((a, b) => b.pct - a.pct);
+
+    const idx = ranked.findIndex(r => r.id === student.id);
+    if (idx === -1) return null;
+    return { rank: idx + 1, total: ranked.length };
+  } catch (err) {
+    console.error(err);
+    return null;
+  }
+}
+
+function printReportCard() {
+  if (!rcCurrentStudent || !rcCurrentResults) {
+    showToast('Load a student report card first.', 'error');
+    return;
+  }
+  const s = rcCurrentStudent;
+  const r = rcCurrentResults;
+  const teacherRemarks   = document.getElementById('rcTeacherRemarks').value.trim();
+  const principalRemarks = document.getElementById('rcPrincipalRemarks').value.trim();
+
+  const html = `
+    <div class="pr-header">
+      <h2>${escapeHtml(window.__schoolName || 'My School ERP')}</h2>
+      <div class="pr-sub">PROGRESS REPORT — ${escapeHtml(getAcademicYear())}</div>
+    </div>
+    <div class="pr-meta-grid">
+      <div><strong>Name:</strong> ${escapeHtml(s.name || '—')}</div>
+      <div><strong>Admission No.:</strong> ${escapeHtml(s.admissionNo || '—')}</div>
+      <div><strong>Class:</strong> ${escapeHtml(s.class || '—')} - ${escapeHtml(s.section || '—')}</div>
+      <div><strong>Father's Name:</strong> ${escapeHtml(s.fatherName || '—')}</div>
+    </div>
+    <table class="pr-table">
+      <thead><tr><th>Subject</th><th>UT1</th><th>UT2</th><th>Half Yearly</th><th>Annual</th><th>Total</th><th>Grade</th></tr></thead>
+      <tbody>
+        ${r.rows.map(row => `<tr><td>${escapeHtml(row.subject)}</td>${row.cells.map(c => `<td>${escapeHtml(c)}</td>`).join('')}<td>${escapeHtml(row.total)}</td><td>${row.grade}</td></tr>`).join('')}
+      </tbody>
+    </table>
+    <div class="pr-summary-row">
+      <div><div class="pr-s-val">${r.totalObtained} / ${r.totalMax}</div><div class="pr-s-lbl">Total Marks</div></div>
+      <div><div class="pr-s-val">${r.totalMax ? r.percentage.toFixed(1) + '%' : '—'}</div><div class="pr-s-lbl">Percentage</div></div>
+      <div><div class="pr-s-val">${r.overallGrade}</div><div class="pr-s-lbl">Overall Grade</div></div>
+    </div>
+    ${(teacherRemarks || principalRemarks) ? `
+      <div class="pr-remarks-block">
+        ${teacherRemarks ? `<strong>Teacher's Remarks:</strong> ${escapeHtml(teacherRemarks)}` : ''}
+        ${principalRemarks ? `<div style="margin-top:8px;"><strong>Principal's Remarks:</strong> ${escapeHtml(principalRemarks)}</div>` : ''}
+      </div>` : ''}
+    <div class="pr-sign-row">
+      <div><div class="line"></div>Class Teacher</div>
+      <div><div class="line"></div>Principal</div>
+    </div>
+    <div class="pr-footer-note">Generated by My School ERP on ${formatTimestampDate(new Date())}</div>
+  `;
+
+  document.getElementById('printArea').innerHTML = html;
+  window.print();
+}
+
+// ════════════════════════════════════════════════════════════
+//  TAB 3: RESULT ANALYSIS
+// ════════════════════════════════════════════════════════════
+function setupAnalysisTab() {
+  document.getElementById('analyzeBtn').addEventListener('click', runAnalysis);
+}
+
+async function runAnalysis() {
+  const cls      = document.getElementById('raClass').value;
+  const examType = document.getElementById('raExamType').value;
+  if (!cls || !examType) { showToast('Select a class and exam type.', 'error'); return; }
+
+  const resultsEl = document.getElementById('analysisResults');
+  document.getElementById('analysisEmptyState').style.display = 'none';
+  resultsEl.style.display = 'none';
+
+  try {
+    const snap = await db.collection('marks').where('class', '==', cls).where('examType', '==', examType).get();
+    const docs = snap.docs.map(d => d.data());
+    if (!docs.length) {
+      showToast('No marks found for this class and exam type yet.', 'warning');
+      document.getElementById('analysisEmptyState').style.display = 'block';
+      return;
+    }
+    renderAnalysis(docs);
+    resultsEl.style.display = 'block';
+  } catch (err) {
+    console.error(err);
+    showToast('Could not run analysis. Try again.', 'error');
+    document.getElementById('analysisEmptyState').style.display = 'block';
+  }
+}
+
+function renderAnalysis(docs) {
+  // Group entries by student
+  const byStudent = {};
+  docs.forEach(m => {
+    if (!byStudent[m.studentId]) byStudent[m.studentId] = { name: m.studentName, subjects: {} };
+    byStudent[m.studentId].subjects[m.subject] = m;
+  });
+
+  let passed = 0, failed = 0, absent = 0;
+  const attention = [];
+  const studentSummaries = [];
+
+  Object.values(byStudent).forEach(s => {
+    const subjEntries = Object.values(s.subjects);
+    const numericEntries = subjEntries.filter(e => e.marksObtained !== 'AB' && e.marksObtained != null);
+
+    if (numericEntries.length === 0) {
+      absent++;
+      return;
+    }
+
+    const failingSubjects = numericEntries
+      .filter(e => (e.marksObtained / e.maxMarks) * 100 < 33)
+      .map(e => e.subject);
+
+    const obtained = numericEntries.reduce((sum, e) => sum + e.marksObtained, 0);
+    const max      = numericEntries.reduce((sum, e) => sum + e.maxMarks, 0);
+    const pct      = max ? (obtained / max) * 100 : 0;
+
+    studentSummaries.push({ name: s.name, obtained, max, pct });
+
+    if (failingSubjects.length > 0) {
+      failed++;
+      attention.push({ name: s.name, subjects: failingSubjects });
+    } else {
+      passed++;
+    }
+  });
+
+  document.getElementById('raPassedVal').textContent = passed;
+  document.getElementById('raFailedVal').textContent = failed;
+  document.getElementById('raAbsentVal').textContent = absent;
+
+  // Subject-wise average
+  const subjectTotals = {};
+  docs.forEach(m => {
+    if (m.marksObtained === 'AB' || m.marksObtained == null) return;
+    if (!subjectTotals[m.subject]) subjectTotals[m.subject] = { sum: 0, count: 0 };
+    subjectTotals[m.subject].sum += (m.marksObtained / m.maxMarks) * 100;
+    subjectTotals[m.subject].count += 1;
+  });
+
+  const barChart = document.getElementById('raBarChart');
+  const subjectNames = Object.keys(subjectTotals).sort();
+  if (!subjectNames.length) {
+    barChart.innerHTML = `<div class="empty-state">No subject data available.</div>`;
+  } else {
+    barChart.innerHTML = subjectNames.map(subj => {
+      const avg = subjectTotals[subj].sum / subjectTotals[subj].count;
+      return `
+        <div class="bar-chart-row">
+          <div class="bar-chart-label">${escapeHtml(subj)}</div>
+          <div class="bar-chart-track">
+            <div class="bar-chart-fill" style="width:${avg.toFixed(1)}%;"><span>${avg.toFixed(1)}%</span></div>
+          </div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Grade distribution (per-student overall grade for this exam)
+  const gradeCounts = {};
+  studentSummaries.forEach(s => {
+    const grade = gradeFromPercentage(s.pct);
+    gradeCounts[grade] = (gradeCounts[grade] || 0) + 1;
+  });
+  const gradeOrder = ['A+', 'A', 'B+', 'B', 'C', 'D', 'F'];
+  document.getElementById('raGradeDist').innerHTML = `
+    <table class="grade-dist-table">
+      <thead><tr>${gradeOrder.map(g => `<th>${g}</th>`).join('')}</tr></thead>
+      <tbody><tr>${gradeOrder.map(g => `<td>${gradeCounts[g] || 0}</td>`).join('')}</tr></tbody>
+    </table>
+  `;
+
+  // Top 5 performers
+  const top5 = [...studentSummaries].sort((a, b) => b.pct - a.pct).slice(0, 5);
+  const topBody = document.getElementById('raTopPerformers');
+  if (!top5.length) {
+    topBody.innerHTML = `<tr><td colspan="4"><div class="empty-state">No data available.</div></td></tr>`;
+  } else {
+    topBody.innerHTML = top5.map((s, i) => `
+      <tr>
+        <td><span class="rank-badge ${i < 3 ? 'rank-' + (i + 1) : ''}">${i + 1}</span></td>
+        <td>${escapeHtml(s.name || '—')}</td>
+        <td>${s.obtained} / ${s.max}</td>
+        <td>${s.pct.toFixed(1)}%</td>
+      </tr>
+    `).join('');
+  }
+
+  // Students needing attention
+  const attentionEl = document.getElementById('raAttentionList');
+  if (!attention.length) {
+    attentionEl.innerHTML = `<div class="empty-state"><div class="ei">🎉</div>No students are currently failing any subject.</div>`;
+  } else {
+    attentionEl.innerHTML = attention.map(a => `
+      <div class="attention-item">
+        <span class="attention-name">${escapeHtml(a.name || '—')}</span>
+        <span class="attention-subjects">Failing: ${a.subjects.map(escapeHtml).join(', ')}</span>
+      </div>
+    `).join('');
+  }
+}
 </script>
 </body>
 </html>
