@@ -759,16 +759,26 @@ document.getElementById('saveTeacherBtn').addEventListener('click', async functi
 
     if (!editMode) {
       // CREATE: Firebase Auth account first
-     let secondaryApp;
-try {
-  secondaryApp = firebase.app('secondary');
-} catch(e) {
-  secondaryApp = firebase.initializeApp(firebase.app().options, 'secondary');
-}
-const secondaryAuth = secondaryApp.auth();
-const credential = await secondaryAuth.createUserWithEmailAndPassword(email, password);
-const uid = credential.user.uid;
-await secondaryAuth.signOut();
+   const apiKey = firebase.app().options.apiKey;
+    const signupRes = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, returnSecureToken: false })
+      }
+    );
+    const signupData = await signupRes.json();
+    if (!signupRes.ok) {
+      const errCode = signupData.error?.message || 'UNKNOWN';
+      const errMap = {
+        'EMAIL_EXISTS': 'auth/email-already-in-use',
+        'WEAK_PASSWORD : Password should be at least 6 characters': 'auth/weak-password',
+        'INVALID_EMAIL': 'auth/invalid-email',
+      };
+      throw { code: errMap[errCode] || errCode };
+    }
+    const uid = signupData.localId;
 
 teacherData.uid       = uid;
 teacherData.createdAt = firebase.firestore.FieldValue.serverTimestamp();

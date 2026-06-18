@@ -974,18 +974,28 @@ document.getElementById('saveStudentBtn').addEventListener('click', async functi
       updatedAt: firebase.firestore.FieldValue.serverTimestamp()
     };
 
-    if (!editMode) {
-    // Use a secondary Firebase app to create users without affecting admin session
-let secondaryApp;
-try {
-  secondaryApp = firebase.app('secondary');
-} catch(e) {
-  secondaryApp = firebase.initializeApp(firebase.app().options, 'secondary');
-}
-const secondaryAuth = secondaryApp.auth();
-const cred = await secondaryAuth.createUserWithEmailAndPassword(email, password);
-const uid  = cred.user.uid;
-await secondaryAuth.signOut(); // immediately sign out secondary app
+   if (!editMode) {
+    // Create user via Firebase Auth REST API (avoids triggering auth state change)
+    const apiKey = firebase.app().options.apiKey;
+    const signupRes = await fetch(
+      `https://identitytoolkit.googleapis.com/v1/accounts:signUp?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email, password, returnSecureToken: false })
+      }
+    );
+    const signupData = await signupRes.json();
+    if (!signupRes.ok) {
+      const errCode = signupData.error?.message || 'UNKNOWN';
+      const errMap = {
+        'EMAIL_EXISTS': 'auth/email-already-in-use',
+        'WEAK_PASSWORD : Password should be at least 6 characters': 'auth/weak-password',
+        'INVALID_EMAIL': 'auth/invalid-email',
+      };
+      throw { code: errMap[errCode] || errCode };
+    }
+    const uid = signupData.localId;
 
 data.uid          = uid;
 data.status       = 'active';
